@@ -77,6 +77,7 @@ REQUESTED_TUNNEL_HOSTNAME="${TUNNEL_HOSTNAME:-}"
 REQUESTED_TUNNEL_NAME="${TUNNEL_NAME:-}"
 REQUESTED_TUNNEL_TOKEN="${TUNNEL_TOKEN:-}"
 REQUESTED_PROJECT_SLUG="${PROJECT_SLUG:-}"
+REQUESTED_PORT="${PORT:-}"
 REQUESTED_MCP_ENV_DIR="${MCP_ENV_DIR:-}"
 REQUESTED_MCP_PYTHON="${MCP_PYTHON:-}"
 REQUESTED_CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-}"
@@ -90,6 +91,12 @@ SLUG="${REQUESTED_PROJECT_SLUG:-${PROJECT_SLUG:-}}"
   || SLUG="$(basename "$REPO_ROOT" | tr -cs 'A-Za-z0-9_-' '-' | sed 's/-$//')"
 set_config PROJECT_SLUG "$SLUG"
 set_config REPO_PATH "$REPO_ROOT"
+
+PORT_VALUE="${REQUESTED_PORT:-${PORT:-8765}}"
+case "$PORT_VALUE" in ''|*[!0-9]*) fatal "PORT muss eine Ganzzahl sein" ;; esac
+[ "$PORT_VALUE" -ge 1 ] && [ "$PORT_VALUE" -le 65535 ] \
+  || fatal "PORT muss zwischen 1 und 65535 liegen"
+set_config PORT "$PORT_VALUE"
 
 MODE="${REQUESTED_TUNNEL_MODE:-${TUNNEL_MODE:-}}"
 if [ -z "$MODE" ]; then

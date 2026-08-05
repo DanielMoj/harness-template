@@ -1,0 +1,9 @@
+[
+  {
+    "id": "M0",
+    "title": "Dauer-Fail durchlaeuft Rebuild und Arbiter",
+    "criteriaRef": ["K-M0-1", "K-M0-2", "K-M0-3"],
+    "deps": [],
+    "effort": "low"
+  }
+]

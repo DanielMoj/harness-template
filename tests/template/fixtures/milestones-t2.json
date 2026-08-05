@@ -1,0 +1,16 @@
+[
+  {
+    "id": "M0",
+    "title": "Absichtlich rotes Gate wird repariert",
+    "criteriaRef": ["K-M0-1", "K-M0-2", "K-M0-3"],
+    "deps": [],
+    "effort": "low"
+  },
+  {
+    "id": "M1",
+    "title": "Zweites Mini-Meilenstein laeuft gruen",
+    "criteriaRef": ["K-M1-1", "K-M1-2", "K-M1-3"],
+    "deps": ["M0"],
+    "effort": "low"
+  }
+]

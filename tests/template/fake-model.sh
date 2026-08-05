@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# Deterministische Rollen-Fixture: bedient echte Handoff-/Territoriumsvertraege.
+set -euo pipefail
+
+if [ "${1:-}" = --help ]; then
+  echo "fake-model --help (frische Einweg-Session; keine Resume-Flags)"
+  exit 0
+fi
+
+ROLE="${1:?Aufruf: fake-model.sh builder|reviewer|qa}"
+[ -n "${PROMPT_FILE:-}" ] && [ -f "$PROMPT_FILE" ] \
+  || { echo "fake-model: PROMPT_FILE fehlt" >&2; exit 2; }
+
+PROMPT_NAME="$(basename "$PROMPT_FILE")"
+if [[ "$PROMPT_NAME" =~ ^(.+)-(10-acceptance|20-plan|30-plan-review|40-build|45-qa|50-code-review|60-rework|62-rebuild|70-arbiter)-r([0-9]+)- ]]; then
+  MS="${BASH_REMATCH[1]}"
+  PHASE="${BASH_REMATCH[2]}"
+  ROUND="${BASH_REMATCH[3]}"
+else
+  echo "fake-model: unbekannter Promptname: $PROMPT_NAME" >&2
+  exit 2
+fi
+
+ORCH=orchestrator
+HANDOFF="$ORCH/handoff/$MS"
+mkdir -p "$HANDOFF"
+
+if [ "${ACCEPTANCE_TRANSPORT_PROBE:-0}" = 1 ] && [ "$MS" = M0 ] \
+  && [ "$PHASE" = 20-plan ]; then
+  transport_marker="$ORCH/logs/.acceptance-transport-once.log"
+  if [ ! -f "$transport_marker" ]; then
+    printf 'first transport attempt consumed\n' > "$transport_marker"
+    echo 'HTTP 503 temporarily unavailable (intentional acceptance probe)' >&2
+    exit 75
+  fi
+fi
+
+if [ "${ACCEPTANCE_TERRITORY_PROBE:-0}" = 1 ] && [ "$MS" = M1 ] \
+  && [ "$PHASE" = 10-acceptance ] \
+  && ! grep -Fq 'vorige Versuch wurde wegen Territoriumsverletzung verworfen' "$PROMPT_FILE"; then
+  mkdir -p src
+  printf 'must be rolled back\n' > src/reviewer-territory-violation.txt
+  echo 'fake-model: intentional territory violation on first attempt'
+  exit 0
+fi
+
+json_to_file() {
+  local destination="$1"
+  shift
+  jq -n "$@" > "$destination"
+}
+
+case "$PHASE" in
+  10-acceptance)
+    [ "$ROLE" = reviewer ] || exit 2
+    criteria='[]'
+    while IFS= read -r id; do
+      quote="$(grep -F -- "$id:" docs/99-acceptance-fixture.md | head -n 1)"
+      [ -n "$quote" ] || { echo "fake-model: Kriterium fehlt: $id" >&2; exit 2; }
+      criteria="$(jq -c --arg id "$id" --arg quote "$quote" \
+        '. + [{id:$id,quote:$quote,source:"docs/99-acceptance-fixture.md"}]' <<<"$criteria")"
+    done < <(jq -r --arg ms "$MS" '.[] | select(.id==$ms) | .criteriaRef[]' "$ORCH/milestones.json")
+    jq -n --argjson criteria "$criteria" '{criteria:$criteria,open:[]}' > "$HANDOFF/CRITERIA.json"
+    mkdir -p tests/acceptance
+    ids="$(jq -r --arg ms "$MS" '.[] | select(.id==$ms) | .criteriaRef | join(", ")' "$ORCH/milestones.json")"
+    printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
+      "# Criteria: $ids" "test -s src/$MS.txt" \
+      "echo '$MS acceptance fixture: PASS'" > "tests/acceptance/$MS.sh"
+    chmod +x "tests/acceptance/$MS.sh"
+    ;;
+  20-plan)
+    [ "$ROLE" = builder ] || exit 2
+    if [ "$ROUND" = 1 ]; then
+      printf '# PLAN %s\n\nZiel: Fixture implementieren.\n\nDateien: src/%s.txt, PROGRESS.md.\n\nSchnittstellen: keine.\n\nReihenfolge: bauen, Gates, Review.\n\nRisiken: absichtlich rotes Behavior-Gate.\n\nTestplan: beide Gate-Steckplaetze.\n' \
+        "$MS" "$MS" > "$HANDOFF/PLAN.md"
+    else
+      printf '# PLAN-UPDATE %s r%s\n\n- [E-GATE] akzeptiert: Produktcode wird korrigiert.\n' \
+        "$MS" "$ROUND" > "$HANDOFF/PLAN-UPDATE.md"
+    fi
+    ;;
+  30-plan-review)
+    [ "$ROLE" = reviewer ] || exit 2
+    printf '# PLAN-REVIEW %s r%s\n\nKeine blocking-Befunde.\n' "$MS" "$ROUND" \
+      > "$HANDOFF/PLAN-REVIEW.md"
+    json_to_file "$HANDOFF/verdict-plan.json" \
+      --arg ms "$MS" --argjson round "$ROUND" \
+      '{milestone:$ms,phase:"plan",round:$round,verdict:"PASS",blocking:[],nonblocking:[]}'
+    ;;
+  40-build)
+    [ "$ROLE" = builder ] || exit 2
+    mkdir -p src
+    printf 'fixture implementation for %s\n' "$MS" > "src/$MS.txt"
+    printf '\n- %s build r%s: `printf fixture` → exit 0\n' "$MS" "$ROUND" >> PROGRESS.md
+    ;;
+  50-code-review)
+    [ "$ROLE" = reviewer ] || exit 2
+    gate_result="$(jq -r '.result' "$ORCH/state/$MS/gates.json")"
+    if [ "$gate_result" = pass ]; then
+      printf '# REVIEW %s r%s\n\nGates sind gruen; keine blocking-Befunde.\n' "$MS" "$ROUND" \
+        > "$HANDOFF/REVIEW.md"
+      json_to_file "$HANDOFF/verdict-code.json" \
+        --arg ms "$MS" --argjson round "$ROUND" \
+        '{milestone:$ms,phase:"code",round:$round,verdict:"PASS",blocking:[],nonblocking:[]}'
+    else
+      printf '# REVIEW %s r%s\n\n- [E-GATE] blocking gate:behavior — Behavior-Gate ist rot — Produktcode korrigieren.\n' \
+        "$MS" "$ROUND" > "$HANDOFF/REVIEW.md"
+      json_to_file "$HANDOFF/verdict-code.json" \
+        --arg ms "$MS" --argjson round "$ROUND" \
+        '{milestone:$ms,phase:"code",round:$round,verdict:"REWORK",blocking:[{id:"E-GATE",ref:"gate:behavior",note:"absichtlicher Fixture-Befund"}],nonblocking:[]}'
+    fi
+    ;;
+  60-rework)
+    [ "$ROLE" = builder ] || exit 2
+    mkdir -p src
+    if [ "${ACCEPTANCE_SCENARIO:-}" = T2 ] && [ "$MS" = M0 ]; then
+      printf 'behavior corrected in r%s\n' "$ROUND" > src/rework-ok
+    else
+      printf 'permanent-fail attempt r%s\n' "$ROUND" > "src/rework-$ROUND.txt"
+    fi
+    printf '# REWORK-NOTES %s r%s\n\n- [E-GATE] Produktpfad bearbeitet; Fixture-Gate entscheidet erneut.\n' \
+      "$MS" "$ROUND" > "$HANDOFF/REWORK-NOTES.md"
+    printf '\n- %s rework r%s: Fixture-Aenderung geschrieben → exit 0\n' "$MS" "$ROUND" >> PROGRESS.md
+    ;;
+  62-rebuild)
+    [ "$ROLE" = builder ] || exit 2
+    mkdir -p src
+    printf 'rebuilt fixture implementation for %s\n' "$MS" > "src/$MS.txt"
+    printf 'independent rebuild path r%s\n' "$ROUND" > "src/rebuild-$ROUND.txt"
+    printf '\n- %s rebuild r%s: alternativer Fixture-Pfad → exit 0\n' "$MS" "$ROUND" >> PROGRESS.md
+    ;;
+  70-arbiter)
+    [ "$ROLE" = reviewer ] || exit 2
+    printf '# ARBITER %s\n\nHUMAN: Das absichtlich permanente Gate kann ohne Aenderung der Testvorgabe nicht aufgeloest werden.\n' \
+      "$MS" > "$HANDOFF/ARBITER.md"
+    json_to_file "$HANDOFF/verdict-arbiter.json" \
+      --arg ms "$MS" --argjson round "$ROUND" \
+      '{milestone:$ms,phase:"code",round:$round,verdict:"HUMAN",directive:"Betreiber muss den absichtlichen Dauer-Fail aufloesen."}'
+    ;;
+  45-qa)
+    echo "fake-model: QA ist in diesen Szenarien deaktiviert" >&2
+    exit 2
+    ;;
+esac
+
+echo "fake-model: role=$ROLE phase=$PHASE milestone=$MS round=$ROUND scenario=${ACCEPTANCE_SCENARIO:-unset}"

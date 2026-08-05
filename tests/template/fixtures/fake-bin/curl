@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# ntfy-kompatibler Curl-Dummy; protokolliert nur das Event-Tag.
+set -euo pipefail
+
+[ -n "${FAKE_NOTIFY_LOG:-}" ] || { echo "fake-curl: FAKE_NOTIFY_LOG fehlt" >&2; exit 2; }
+event=unknown
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = -H ] && [ "$#" -ge 2 ]; then
+    shift
+    case "$1" in Tags:\ *) event="${1#Tags: }" ;; esac
+  fi
+  shift
+done
+printf '%s\n' "$event" >> "$FAKE_NOTIFY_LOG"

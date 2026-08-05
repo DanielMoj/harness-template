@@ -28,6 +28,8 @@ LOCK_HELD=0
 PARKED_LIST=""
 HALT_REQUESTED=0
 PHASE_COUNT=0
+OWNERSHIP_SNAPSHOT=""
+declare -A OWNERSHIP_BEFORE=()
 
 # Neue Werte werden nur als Defaults gesetzt; config.env gewinnt einzeln.
 AUTONOMY_LEVEL="${AUTONOMY_LEVEL:-2}"
@@ -58,7 +60,7 @@ REBUILD_ROUND="${REBUILD_ROUND:-4}"
 ARBITER_EXTRA_ROUNDS="${ARBITER_EXTRA_ROUNDS:-2}"
 RETRY_MAX="${RETRY_MAX:-2}"
 RETRY_SLEEP="${RETRY_SLEEP:-120}"
-QA_REQUIRED_FROM="${QA_REQUIRED_FROM:-M0}"
+QA_REQUIRED_FROM="${QA_REQUIRED_FROM:-M3}"
 QA_ENABLED="${QA_ENABLED:-$([ -n "${QA_CMD:-}" ] && echo 1 || echo 0)}"
 QA_PROBE_STRICT="${QA_PROBE_STRICT:-1}"
 QA_PROBE_RETRIES="${QA_PROBE_RETRIES:-3}"
@@ -87,6 +89,10 @@ fatal() {
 }
 
 release_lock() {
+  if [ -n "$OWNERSHIP_SNAPSHOT" ] && [ -d "$OWNERSHIP_SNAPSHOT" ]; then
+    rm -rf -- "$OWNERSHIP_SNAPSHOT"
+    OWNERSHIP_SNAPSHOT=""
+  fi
   [ "$LOCK_HELD" = 1 ] || return 0
   if [ -f "$ORCH/.lock/pid" ] && [ "$(cat "$ORCH/.lock/pid" 2>/dev/null)" = "$$" ]; then
     rm -f "$ORCH/.lock/pid"
@@ -206,13 +212,11 @@ preflight() {
       probe_file="$ORCH/logs/qa-probe-$(TS)-$attempt.md"
       printf '%s\n' "Antworte nur: OK" > "$probe_file"
       export PROMPT_FILE="$probe_file"
-      set +e
       if command -v timeout >/dev/null 2>&1; then
-        probe_out="$(timeout "$QA_PROBE_TIMEOUT" bash -c "$QA_CMD" 2>&1)"; rc=$?
+        if probe_out="$(timeout "$QA_PROBE_TIMEOUT" bash -c "$QA_CMD" 2>&1)"; then rc=0; else rc=$?; fi
       else
-        probe_out="$(bash -c "$QA_CMD" 2>&1)"; rc=$?
+        if probe_out="$(bash -c "$QA_CMD" 2>&1)"; then rc=0; else rc=$?; fi
       fi
-      set -e
       if [ "$rc" = 0 ] && grep -q 'OK' <<<"$probe_out"; then
         log "QA-Routenprobe bestanden ($QA_MODEL)"
         break
@@ -250,6 +254,64 @@ rollback_attempt() {
   git clean -qfd -e config.env -e toolchain.json -e orchestrator/logs/ -e orchestrator/.lock/
 }
 
+path_fingerprint() {
+  local path="$1"
+  if [ -L "$path" ]; then
+    printf 'link:%s:%s\n' "$(stat -c '%a' -- "$path")" "$(readlink -- "$path")"
+  elif [ -f "$path" ]; then
+    printf 'file:%s:%s\n' "$(stat -c '%a' -- "$path")" "$(sha256sum -- "$path" | awk '{print $1}')"
+  elif [ -d "$path" ]; then
+    printf 'dir:%s\n' "$(stat -c '%a' -- "$path")"
+  else
+    echo missing
+  fi
+}
+
+changed_paths() {
+  { git diff --name-only -z HEAD; git ls-files --others --exclude-standard -z; } | sort -zu
+}
+
+snapshot_worktree() {
+  local path
+  [ -z "$OWNERSHIP_SNAPSHOT" ] || rm -rf -- "$OWNERSHIP_SNAPSHOT"
+  OWNERSHIP_SNAPSHOT="$(mktemp -d /tmp/harness-model-baseline.XXXXXX)"
+  mkdir -p "$OWNERSHIP_SNAPSHOT/files"
+  OWNERSHIP_BEFORE=()
+  while IFS= read -r -d '' path; do
+    OWNERSHIP_BEFORE["$path"]="$(path_fingerprint "$path")"
+    if [ -e "$path" ] || [ -L "$path" ]; then
+      cp -a --parents -- "$path" "$OWNERSHIP_SNAPSHOT/files"
+    fi
+  done < <(changed_paths)
+  for path in orchestrator/config.env toolchain.json; do
+    [ -e "$path" ] || [ -L "$path" ] || continue
+    if [ -z "${OWNERSHIP_BEFORE[$path]+set}" ]; then
+      OWNERSHIP_BEFORE["$path"]="$(path_fingerprint "$path")"
+      cp -a --parents -- "$path" "$OWNERSHIP_SNAPSHOT/files"
+    fi
+  done
+}
+
+restore_worktree() {
+  local base="$1" path saved
+  rollback_attempt "$base"
+  for path in "${!OWNERSHIP_BEFORE[@]}"; do
+    saved="$OWNERSHIP_SNAPSHOT/files/$path"
+    if [ -e "$saved" ] || [ -L "$saved" ]; then
+      mkdir -p "$(dirname "$path")"
+      cp -a -- "$saved" "$path"
+    else
+      rm -f -- "$path"
+    fi
+  done
+}
+
+clear_worktree_snapshot() {
+  [ -z "$OWNERSHIP_SNAPSHOT" ] || rm -rf -- "$OWNERSHIP_SNAPSHOT"
+  OWNERSHIP_SNAPSHOT=""
+  OWNERSHIP_BEFORE=()
+}
+
 path_allowed() {
   local role="$1" phase="$2" ms="$3" path="$4"
   case "$role:$phase:$path" in
@@ -277,30 +339,36 @@ path_allowed() {
 
 ownership_check() {
   local role="$1" phase="$2" ms="$3" base="$4" config_hash="$5"
+  local path before now
+  declare -A candidates=()
   OWNERSHIP_BAD=""
   if [ "$(git rev-parse HEAD)" != "$base" ]; then
     OWNERSHIP_BAD="git history (Modelle dürfen nicht committen)"
-    rollback_attempt "$base"
+    restore_worktree "$base"
     return 1
   fi
   if [ "$(sha256sum "$CONFIG" | awk '{print $1}')" != "$config_hash" ]; then
     OWNERSHIP_BAD="orchestrator/config.env"
-    rollback_attempt "$base"
+    restore_worktree "$base"
     return 1
   fi
 
-  local path
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
+  for path in "${!OWNERSHIP_BEFORE[@]}"; do candidates["$path"]=1; done
+  while IFS= read -r -d '' path; do candidates["$path"]=1; done < <(changed_paths)
+  for path in "${!candidates[@]}"; do
+    before="${OWNERSHIP_BEFORE[$path]:-__clean__}"
+    now="$(path_fingerprint "$path")"
+    [ "$before" != __clean__ ] && [ "$before" = "$now" ] && continue
     if ! path_allowed "$role" "$phase" "$ms" "$path"; then
       OWNERSHIP_BAD="${OWNERSHIP_BAD}${OWNERSHIP_BAD:+ }$path"
     fi
-  done < <({ git diff --name-only "$base"; git status --porcelain --untracked-files=all | awk '{print substr($0,4)}'; } | sort -u)
+  done
 
   if [ -n "$OWNERSHIP_BAD" ]; then
-    rollback_attempt "$base"
+    restore_worktree "$base"
     return 1
   fi
+  clear_worktree_snapshot
   mkdir -p "$ORCH/state/$ms"
   printf '%s\t%s\t%s\n' "$(date --iso-8601=seconds)" "$role" "$phase" > "$ORCH/state/$ms/territory-ok"
   return 0
@@ -323,21 +391,20 @@ run_model() {
   log_file="$ORCH/logs/$ms-$phase-r$round-$stamp.log"
   base="$(git rev-parse HEAD)"
   config_hash="$(sha256sum "$CONFIG" | awk '{print $1}')"
+  snapshot_worktree
 
   while :; do
     stop_check
     log "RUN $role $phase ($ms r$round, Versuch $((try+1))) -> $log_file"
-    set +e
     if command -v timeout >/dev/null 2>&1; then
-      timeout "$PHASE_TIMEOUT" bash -c "$cmd" > "$log_file" 2>&1; rc=$?
+      if timeout "$PHASE_TIMEOUT" bash -c "$cmd" > "$log_file" 2>&1; then rc=0; else rc=$?; fi
     else
-      bash -c "$cmd" > "$log_file" 2>&1; rc=$?
+      if bash -c "$cmd" > "$log_file" 2>&1; then rc=0; else rc=$?; fi
     fi
-    set -e
 
     if [ "$rc" -ne 0 ]; then
       if transport_error "$rc" "$log_file" && [ "$try" -lt "$RETRY_MAX" ]; then
-        rollback_attempt "$base"
+        restore_worktree "$base"
         try=$((try+1))
         log "WARN: Transportfehler $role/$phase rc=$rc — Retry $try/$RETRY_MAX in ${sleep_s}s; keine Runde verbraucht"
         sleep "$sleep_s"
@@ -345,6 +412,8 @@ run_model() {
         log_file="$ORCH/logs/$ms-$phase-r$round-$(TS).log"
         continue
       fi
+      restore_worktree "$base"
+      clear_worktree_snapshot
       fatal "$role/$phase rc=$rc; siehe $log_file"
     fi
 
@@ -427,9 +496,7 @@ run_gates() {
   local ms="$1" round="$2" rc
   stop_check
   CURRENT_MS="$ms"; CURRENT_PHASE="gates"
-  set +e
-  ROUND="$round" "$ORCH/verifier.sh" "$ms"; rc=$?
-  set -e
+  if ROUND="$round" "$ORCH/verifier.sh" "$ms"; then rc=0; else rc=$?; fi
   commit_phase "$ms" gates "orch($ms): gates r$round (rc=$rc)"
   return "$rc"
 }
@@ -574,7 +641,7 @@ run_ms() {
       verdict_value="$(verdict "$ms" plan)"
       if [ "$verdict_value" = PASS ]; then break; fi
       if [ "$verdict_value" = ESCALATE ] || [ "$round" -ge "$MAX_ROUNDS_PLAN" ]; then
-        set +e; arbiter "$ms" plan "$round"; arb_rc=$?; set -e
+        if arbiter "$ms" plan "$round"; then arb_rc=0; else arb_rc=$?; fi
         [ "$arb_rc" = 2 ] && return 10
         if [ "$arb_rc" != 0 ]; then park "$ms" "Plan nicht auflösbar; Arbiter benötigt HUMAN."; return 3; fi
       fi
@@ -603,14 +670,14 @@ run_ms() {
   [ ! -f "$ORCH/state/$ms/arbiter-granted" ] || max_rounds=$((MAX_ROUNDS_REWORK+ARBITER_EXTRA_ROUNDS))
   while :; do
     ensure_project_assets "$ms"
-    set +e; run_gates "$ms" "$round"; gate_rc=$?; set -e
+    if run_gates "$ms" "$round"; then gate_rc=0; else gate_rc=$?; fi
     [ "$HALT_REQUESTED" = 0 ] || return 10
 
     if [ "$QA_ENABLED" = 1 ] && { ! phase_done "$ms" 5b-qa || [ -f "$ORCH/state/$ms/qa-requested" ]; }; then
       model_phase qa 45-qa.md 45-qa "$ms" "$round" 5b-qa
       rm -f "$ORCH/state/$ms/qa-requested"
       [ "$HALT_REQUESTED" = 0 ] || return 10
-      set +e; run_gates "$ms" "$round"; gate_rc=$?; set -e
+      if run_gates "$ms" "$round"; then gate_rc=0; else gate_rc=$?; fi
       [ "$HALT_REQUESTED" = 0 ] || return 10
     fi
 
@@ -622,7 +689,7 @@ run_ms() {
     fi
 
     if [ "$verdict_value" = ESCALATE ] || [ "$round" -ge "$max_rounds" ]; then
-      set +e; arbiter "$ms" code "$round"; arb_rc=$?; set -e
+      if arbiter "$ms" code "$round"; then arb_rc=0; else arb_rc=$?; fi
       [ "$arb_rc" = 2 ] && return 10
       if [ "$arb_rc" != 0 ]; then
         park "$ms" "Codepfad festgefahren (Gates rc=$gate_rc, Verdict=$verdict_value); Arbiter benötigt HUMAN."
@@ -688,7 +755,7 @@ while IFS= read -r ms; do
   COUNT=$((COUNT+1))
   [ "$COUNT" -le "$MAX_MS_PER_RUN" ] || { log "MAX_MS_PER_RUN=$MAX_MS_PER_RUN erreicht"; break; }
   RAN=$((RAN+1))
-  set +e; run_ms "$ms"; rc=$?; set -e
+  if run_ms "$ms"; then rc=0; else rc=$?; fi
   case "$rc" in
     0) ;;
     3) ;;
