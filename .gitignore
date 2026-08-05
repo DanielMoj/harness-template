@@ -29,6 +29,7 @@ test-results/
 orchestrator/logs/*.log
 orchestrator/logs/*-prompt.md
 orchestrator/mcp/*.log
+orchestrator/mcp/connector.url
 
 # Lokale Extraktionsquelle, nie Teil des fertigen Templates.
 reference/patch-v2/
