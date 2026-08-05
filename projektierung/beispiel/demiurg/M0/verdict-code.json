@@ -1,0 +1,9 @@
+{"milestone":"M0","phase":"code","round":2,
+ "verdict":"PASS",
+ "blocking":[],
+ "nonblocking":[
+  {"id":"E26","ref":"docs/07 §M0 (60 fps) + tools/smoke","note":"fps-Messwert weiterhin physikalisch unplausibel (22784/27067 fps im HEAD-Lauf) — Messmethode ohne echte GPU-Synchronisation; härten oder im Artefakt deklarieren. Bereits in BACKLOG.md."},
+  {"id":"E28","ref":"docs/01 (Ersteindruck) + QA.md Q2","note":"Default-Fokus-Land Antarktis (planare Shoelace-Fläche in getDefaultFocusCountry). Kein Korrektheitsbug. Bereits in BACKLOG.md."},
+  {"id":"E29","ref":"docs/12 §4 Gate 2","note":"eslint-Scope deckt tests/acceptance, tests/e2e, tests/fuzz nicht ab (nur tsc). Bereits in BACKLOG.md."},
+  {"id":"E30","ref":"docs/12 §4 Gate 8b + orchestrator/verifier.sh","note":"Ab E2E_REQUIRED_FROM=M3 fehlt das pnpm-Script e2e; zudem Doppelausführung der E2E-Specs im vitest-Glob absehbar. Vor M3 klären. Bereits in BACKLOG.md."}
+ ]}

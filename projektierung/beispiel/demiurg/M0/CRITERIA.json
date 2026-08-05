@@ -1,0 +1,54 @@
+{
+  "milestone": "M0",
+  "source": "docs/07-roadmap.md §M0",
+  "criteria": [
+    { "id": "A-M0-1", "quote": "Vite+TS+pnpm, eslint/vitest, Verzeichnislayout aus AGENTS.md." },
+    { "id": "A-M0-2", "quote": "Pipeline-Minimum: `download.py` + `build_terrain.py` + `build_world.py`" },
+    { "id": "A-M0-3", "quote": "Terrain-Heightmap, countries.topo.json, Zentroide, Distanzmatrix" },
+    { "id": "A-M0-4", "quote": "Fixtures für Tests" },
+    { "id": "A-M0-5", "quote": "Three.js-Globus mit Displacement, Orbit-Kamera," },
+    { "id": "A-M0-6", "quote": "Grenz-Overlay, Länder-Picking (Klick → Name/ISO3 im Overlay)" },
+    { "id": "A-M0-7", "quote": "ABOUT.md" },
+    { "id": "A-M0-8", "quote": "mit Lizenzvermerken." },
+    { "id": "A-M0-9", "quote": "60 fps" },
+    { "id": "A-M0-10", "quote": "Land anklickbar" },
+    { "id": "A-M0-11", "quote": "`pnpm test` grün (Reader-Tests," },
+    { "id": "A-M0-12", "quote": "Picking-Smoke)" },
+    { "id": "A-M0-13", "quote": "`pnpm run smoke` (Headless-Boot, 0 Console-Errors)" },
+    { "id": "A-M0-14", "quote": "`pnpm run mutgate`" },
+    { "id": "A-M0-15", "quote": "`pnpm run graph:check`" },
+    { "id": "A-M0-16", "quote": "`pnpm run api:check`" },
+    { "id": "A-M0-17", "quote": "`pnpm run assets:check`" },
+    { "id": "A-M0-18", "quote": "`pnpm run shots` (feste Kamera + Seed)" },
+    { "id": "A-M0-19", "quote": "(inkl. Erst-Snapshots) eingerichtet" },
+    { "id": "A-M0-20", "quote": "Lockfile committet" },
+    { "id": "A-M0-21", "quote": "PROGRESS.md initialisiert." }
+  ],
+  "open": [
+    {
+      "id": "O-M0-1",
+      "blocking": true,
+      "note": "Netzzugriff (WebSearch/WebFetch/curl) war in der Acceptance-Session für den Reviewer gesperrt. Externe Anker-Quellen (IUGG/NASA-Erdradius, Referenz-Stadtkoordinaten, ISO-3166-Registry) sind damit NICHT verifizierbar — es wurde protokollgemäß nichts geraten. Die M0-Anker in reference/anchors/ stützen sich ausschließlich auf repo-interne normative Quellen (docs/01, docs/04, docs/07, contracts/PROTOCOLS.md) mit wörtlichem Zitat; die Picking-Tests verwenden datenkonsistente Punkte, die aus countries.topo.json selbst abgeleitet werden (eigener TopoJSON-Decoder + Point-in-Polygon im Test), statt externer Stadtkoordinaten. Auflösung: Betreiber schaltet Websuche für Reviewer-Phasen frei (dann Anker-Nachharvest per ADR) ODER die spec-internen Anker werden per ADR als ausreichend für M0 bestätigt."
+    },
+    {
+      "id": "O-M0-2",
+      "blocking": true,
+      "note": "Messkontrakt für 'A-M0-9: 60 fps' und 'A-M0-13: 0 Console-Errors' headless: Die Abnahmetests erwarten, dass `pnpm run smoke` ein Artefakt artifacts/smoke.json mit mindestens {\"consoleErrors\": number, \"fps\": number, \"frames\": number} schreibt (gemessen über einen echten Render-Loop mit WebGL-Kontext, nicht synthetisch). Der PLAN muss die Messmethode (Framezahl, Dauer, Headless-GPU-Setup) festlegen oder einen Gegenvorschlag machen; die Tests werden dann ggf. vom Reviewer nachgezogen."
+    },
+    {
+      "id": "O-M0-3",
+      "blocking": true,
+      "note": "Kardinalität der Distanzmatrix: docs/01 sagt '~200' Länder, docs/03 fixiert 'dist.bin (200×200 Float32, km)'. Die tatsächliche Feature-Zahl von Natural Earth Admin-0 50m konnte ohne Netzzugriff nicht verifiziert werden und weicht sehr wahrscheinlich von exakt 200 ab. Die Abnahmetests prüfen deshalb KONSISTENZ (dims im dist.bin-Header == Länderzahl in countries.meta.json == Geometrien in countries.topo.json) plus Plausibilitätsband um den Nominalwert 200 (Anker M0-country-count-nominal), nicht hart 200×200. Der PLAN muss die Ländermenge (Auswahl-/Aggregationsregel für NE-Admin-0-Einheiten) definieren."
+    },
+    {
+      "id": "O-M0-4",
+      "blocking": false,
+      "note": "API-/Pfad-Kontrakt der Abnahmetests (Builder bestätigt im PLAN oder macht Gegenvorschlag; Anpassung dann durch den Reviewer): (a) src/data/index.ts exportiert parseBinHeader(buf: ArrayBuffer): {magic: string; version: number; dims: number[]} für den 16-B-Header (little-endian: magic 4×ASCII, version u16, dims 2×u32, Rest reserviert) und readDistMatrix(buf: ArrayBuffer): {n: number; km: Float32Array} mit magic 'DIST', Reihenfolge = Indexreihenfolge von countries.meta.json; (b) src/world/index.ts exportiert pickCountryAt(latRad: number, lonRad: number): string | null (ISO3; Datenebene des Farb-ID-Pickings, Winkel in Radiant gemäß IMPLEMENTATION-RULES); (c) countries.meta.json ist ein Array von {id: number, iso3: string, name: string, centroid: [latDeg, lonDeg], neighbors: number[]}; (d) vitest-Include umfasst tests/acceptance/**/*.spec.ts unter `pnpm test`; (e) `pnpm run shots` legt die committeten Erst-Snapshots unter tools/shots/baseline/*.png ab und liest feste Kamera + Seed aus tools/shots/config.json {seed, camera}; (f) .dependency-cruiser.cjs ist Reviewer-Territorium und wird in einer späteren Reviewer-Phase angelegt — der Setup-Test prüft zunächst nur Script-Existenz."
+    },
+    {
+      "id": "O-M0-5",
+      "blocking": false,
+      "note": "Hinweis für build_world.py: Falls die Natural-Earth-Rohdaten für einzelne Einheiten ISO_A3-Sonderwerte (z. B. '-99') führen, muss die Pipeline ISO3 robust ableiten (Fallback ADM0_A3 o. ä.) — countries.meta.json muss für jedes Land ein gültiges dreibuchstabiges ISO3 enthalten; die Abnahmetests erzwingen /^[A-Z]{3}$/."
+    }
+  ]
+}

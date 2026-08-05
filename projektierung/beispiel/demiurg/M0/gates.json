@@ -1,0 +1,6 @@
+{
+  "milestone": "M0", "base": "55bea1a4fa1fd116f58795951d5f2b3dc60eb6ef",
+  "env": {"node": "v22.23.1", "pnpm": "11.13.0", "sha": "47525e90f2917116f6664ba25355c9fbc5c99554"},
+  "gates": {"shots": "pass", "deps": "pass", "trace": "pass", "smoke": "pass", "mutgate": "pass", "api": "pass", "graph": "pass", "bench": "skipped", "e2e": "skipped", "tests": "pass", "lint": "pass", "golden_adr": "skipped", "assets": "pass"},
+  "result": "pass"
+}

@@ -1,0 +1,259 @@
+[
+ {
+  "id": "M0",
+  "title": "Gerüst & Globus",
+  "specs": [
+   "docs/01-vision-architektur.md",
+   "docs/03-daten-pipeline.md",
+   "docs/04-rendering-staedte.md"
+  ]
+ },
+ {
+  "id": "M1",
+  "title": "Simulationskern & Nudging",
+  "specs": [
+   "docs/02-simulationskern.md",
+   "reference/NOTES.md",
+   "docs/03-daten-pipeline.md"
+  ]
+ },
+ {
+  "id": "M2",
+  "title": "Handel & Substitution",
+  "specs": [
+   "docs/02-simulationskern.md",
+   "docs/06-visualisierung-ui.md"
+  ]
+ },
+ {
+  "id": "M3",
+  "title": "Waffe 1: Meteorit",
+  "specs": [
+   "docs/05-zerstoerung-waffen.md",
+   "docs/03-daten-pipeline.md",
+   "docs/06-visualisierung-ui.md"
+  ]
+ },
+ {
+  "id": "M4",
+  "title": "Prozedurale Städte & Epochen",
+  "specs": [
+   "docs/04-rendering-staedte.md",
+   "docs/03-daten-pipeline.md"
+  ]
+ },
+ {
+  "id": "M5",
+  "title": "Detail-Bubble & 3D-Zerstörung",
+  "specs": [
+   "docs/05-zerstoerung-waffen.md",
+   "docs/04-rendering-staedte.md"
+  ]
+ },
+ {
+  "id": "M6",
+  "title": "Hurricane, Erdbeben, Save/Load",
+  "specs": [
+   "docs/05-zerstoerung-waffen.md",
+   "docs/02-simulationskern.md",
+   "docs/06-visualisierung-ui.md"
+  ]
+ },
+ {
+  "id": "M7",
+  "title": "Erkenntnis & Abwehr",
+  "specs": [
+   "docs/08-gegenspieler-progression.md",
+   "docs/05-zerstoerung-waffen.md"
+  ]
+ },
+ {
+  "id": "M8",
+  "title": "Gottesprogression & Feldwaffen",
+  "specs": [
+   "docs/08-gegenspieler-progression.md"
+  ]
+ },
+ {
+  "id": "M9",
+  "title": "TV-Kanal, Spielziel, Endscreen",
+  "specs": [
+   "docs/08-gegenspieler-progression.md",
+   "docs/06-visualisierung-ui.md"
+  ]
+ },
+ {
+  "id": "M10",
+  "title": "Wetter & Energiesystem",
+  "specs": [
+   "docs/09-wetter-energie.md",
+   "docs/03-daten-pipeline.md"
+  ]
+ },
+ {
+  "id": "M11",
+  "title": "Sonnensystem & Raumfahrt",
+  "specs": [
+   "docs/10-sonnensystem.md"
+  ]
+ },
+ {
+  "id": "M12",
+  "title": "All-Kräfte & Exodus",
+  "specs": [
+   "docs/10-sonnensystem.md",
+   "docs/08-gegenspieler-progression.md"
+  ]
+ },
+ {
+  "id": "M13",
+  "title": "Deutung, Wunder, Tarnung, Plagen",
+  "specs": [
+   "docs/11-mechaniken-katalog.md",
+   "docs/08-gegenspieler-progression.md"
+  ]
+ },
+ {
+  "id": "M14",
+  "title": "Migration & Konflikt",
+  "specs": [
+   "docs/11-mechaniken-katalog.md"
+  ]
+ },
+ {
+  "id": "M15",
+  "title": "Güter, Chokepoints, Glaubenskampf",
+  "specs": [
+   "docs/11-mechaniken-katalog.md",
+   "docs/02-simulationskern.md"
+  ]
+ },
+ {
+  "id": "M16",
+  "title": "Nemesis, Archetypen, Chronik",
+  "specs": [
+   "docs/11-mechaniken-katalog.md",
+   "docs/06-visualisierung-ui.md"
+  ]
+ },
+ {
+  "id": "M17",
+  "title": "Gesinnung, Kräfte, Gottes-Hand",
+  "specs": [
+   "docs/13-gesinnung-verkoerperung.md",
+   "docs/08-gegenspieler-progression.md",
+   "docs/11-mechaniken-katalog.md"
+  ]
+ },
+ {
+  "id": "M18",
+  "title": "MV1: Wächter & Senke",
+  "specs": [
+   "docs/14-verifikationsschicht.md",
+   "demiurg-erweiterungsplan-v7.md"
+  ]
+ },
+ {
+  "id": "M19",
+  "title": "MV2: Gläserne Sim",
+  "specs": [
+   "docs/14-verifikationsschicht.md",
+   "contracts/PROTOCOLS.md"
+  ]
+ },
+ {
+  "id": "M20",
+  "title": "Waffen-Optik & Narben",
+  "specs": [
+   "docs/16-grafik.md",
+   "docs/05-zerstoerung-waffen.md",
+   "demiurg-erweiterungsplan-v7.md"
+  ]
+ },
+ {
+  "id": "M21",
+  "title": "Licht, LOD, Terrain-Option",
+  "specs": [
+   "docs/16-grafik.md",
+   "docs/04-rendering-staedte.md",
+   "docs/03-daten-pipeline.md"
+  ]
+ },
+ {
+  "id": "M22",
+  "title": "Stadt-Handel, E54-Fix, Omen-Start",
+  "specs": [
+   "docs/17-staedte-handel.md",
+   "docs/02-simulationskern.md",
+   "docs/08-gegenspieler-progression.md",
+   "reference/research/DR-4/"
+  ]
+ },
+ {
+  "id": "M23",
+  "title": "POI-Ebene",
+  "specs": [
+   "docs/16-grafik.md",
+   "docs/03-daten-pipeline.md",
+   "docs/11-mechaniken-katalog.md",
+   "reference/research/DR-7/"
+  ]
+ },
+ {
+  "id": "M24",
+  "title": "Divergenz-Modus",
+  "specs": [
+   "docs/18-divergenz-modus.md",
+   "docs/14-verifikationsschicht.md",
+   "reference/research/DR-1/",
+   "reference/research/DR-2/",
+   "reference/research/DR-6/"
+  ]
+ },
+ {
+  "id": "M25",
+  "title": "Diplomatie & Krieg",
+  "specs": [
+   "docs/19-diplomatie-krieg.md",
+   "docs/11-mechaniken-katalog.md",
+   "reference/research/DR-3/",
+   "reference/research/DR-7/"
+  ]
+ },
+ {
+  "id": "M26",
+  "title": "Märkte",
+  "specs": [
+   "docs/11-mechaniken-katalog.md",
+   "docs/02-simulationskern.md",
+   "demiurg-erweiterungsplan-v7.md"
+  ]
+ },
+ {
+  "id": "M27",
+  "title": "Zerstörung über Zeit",
+  "specs": [
+   "docs/16-grafik.md",
+   "docs/09-wetter-energie.md",
+   "docs/05-zerstoerung-waffen.md",
+   "reference/research/DR-5/"
+  ]
+ },
+ {
+  "id": "M28",
+  "title": "Atmosphäre & Zeugenschaft",
+  "specs": [
+   "docs/16-grafik.md",
+   "docs/04-rendering-staedte.md",
+   "demiurg-erweiterungsplan-v7.md"
+  ]
+ },
+ {
+  "id": "M29",
+  "title": "Sound",
+  "specs": [
+   "docs/15-sound.md",
+   "demiurg-erweiterungsplan-v7.md"
+  ]
+ }
+]

@@ -1,0 +1,9 @@
+{
+  "id": "M0-earth-radius-km",
+  "value": 6371,
+  "unit": "km",
+  "source_url": "docs/04-rendering-staedte.md §Globus",
+  "quote": "Kugel (Radius 1 = 6371 km) mit Displacement aus",
+  "harvested": "2026-07-15",
+  "note": "Spec-interner Anker: die im Projekt normativ gesetzte Kugelnäherung des Erdradius (Basis für Globus-Skala und Distanzmatrix). Externe Verifikation (IUGG mittlerer Erdradius / NASA Earth Fact Sheet) steht aus, weil Netzzugriff in der Acceptance-Session gesperrt war — siehe orchestrator/handoff/M0/CRITERIA.json O-M0-1. Nachharvest nur per ADR (Datei ist nach Freigabe append-only)."
+}
