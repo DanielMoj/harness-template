@@ -1,0 +1,9 @@
+[
+  {
+    "id": "M0",
+    "title": "Gerüst steht und alle gewählten Gates laufen leer durch",
+    "criteriaRef": ["K-M0-1", "K-M0-2", "K-M0-3"],
+    "deps": [],
+    "effort": "low"
+  }
+]

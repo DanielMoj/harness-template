@@ -1,0 +1,39 @@
+# Geheimnisse und lokale Auswahl
+config.env
+toolchain.json
+
+# Laufzeitumgebungen und Abhängigkeiten
+node_modules/
+.venv/
+venv/
+.direnv/
+.pnpm-store/
+renv/library/
+
+# Bau- und Testartefakte
+dist/
+build/
+coverage/
+reports/
+artifacts/
+playwright-report/
+test-results/
+.stryker-tmp/
+*.lock
+!yarn.lock
+!poetry.lock
+!uv.lock
+!renv.lock
+
+# Vollständige lokale Transkripte; Gates/Zusammenfassungen bleiben versionierbar.
+orchestrator/logs/*.log
+orchestrator/logs/*-prompt.md
+orchestrator/mcp/*.log
+
+# Lokale Extraktionsquelle, nie Teil des fertigen Templates.
+reference/patch-v2/
+
+# Plattform/Editor
+.DS_Store
+__pycache__/
+*.pyc

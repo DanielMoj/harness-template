@@ -1,0 +1,18 @@
+{
+  "contract": 1,
+  "project": "harness-template",
+  "ts": "2026-08-05T22:56:49+02:00",
+  "milestone": {
+    "id": "M0",
+    "index": 1,
+    "total": 1
+  },
+  "phase": "10-acceptance",
+  "round": 1,
+  "needs_human": false,
+  "reason": "",
+  "gates": {},
+  "parked": [],
+  "last_events": [],
+  "exit": null
+}
