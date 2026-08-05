@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$ORCH/gates.d/_lib.sh"
+gate_load_config
+gate_run_configured BENCH_CMD bench

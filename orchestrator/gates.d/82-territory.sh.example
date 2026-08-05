@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+AUDIT="$ORCH/state/$MILESTONE/territory-ok"
+[ -f "$AUDIT" ] || { echo "territory: kein erfolgreicher Territoriums-Diff für die letzte Modellphase"; exit 1; }
+IFS=$'\t' read -r timestamp role phase < "$AUDIT"
+[ -n "${timestamp:-}" ] && [ -n "${role:-}" ] && [ -n "${phase:-}" ] \
+  || { echo "territory: Auditdatei ungültig"; exit 2; }
+echo "territory: letzter Diff sauber ($role/$phase, $timestamp)"

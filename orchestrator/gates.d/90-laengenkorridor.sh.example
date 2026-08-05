@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$ORCH/gates.d/_lib.sh"
+gate_load_config
+
+ANCHOR="${TEXT_LENGTH_ANCHOR:-}"
+[ -n "$ANCHOR" ] && [ -f "$REPO_ROOT/$ANCHOR" ] || { echo "laengenkorridor: TEXT_LENGTH_ANCHOR fehlt" >&2; exit 2; }
+jq -e '.bands|type=="array" and length>0 and all(.[]; (.path|type=="string") and (.min_words|type=="number") and (.max_words|type=="number") and .min_words<=.max_words)' "$REPO_ROOT/$ANCHOR" >/dev/null \
+  || { echo "laengenkorridor: Ankerformat ungültig" >&2; exit 2; }
+
+rc=0
+while IFS= read -r row; do
+  path="$(jq -r '.path' <<<"$row")"
+  min="$(jq -r '.min_words' <<<"$row")"
+  max="$(jq -r '.max_words' <<<"$row")"
+  case "$path" in /*|*..*) echo "unsicherer Textpfad: $path"; rc=1; continue ;; esac
+  [ -f "$REPO_ROOT/$path" ] || { echo "Text fehlt: $path"; rc=1; continue; }
+  words="$(wc -w < "$REPO_ROOT/$path")"
+  if [ "$words" -lt "$min" ] || [ "$words" -gt "$max" ]; then
+    echo "$path: $words Wörter außerhalb [$min,$max]"; rc=1
+  else
+    echo "$path: $words Wörter innerhalb [$min,$max]"
+  fi
+done < <(jq -c '.bands[]' "$REPO_ROOT/$ANCHOR")
+[ "$rc" = 0 ] || { echo "laengenkorridor: mindestens ein Text außerhalb seines Ankerbands"; exit 1; }
+echo "laengenkorridor: alle Texte innerhalb ihrer Ankerbänder"

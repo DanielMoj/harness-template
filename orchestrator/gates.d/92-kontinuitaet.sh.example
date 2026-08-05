@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$ORCH/gates.d/_lib.sh"
+gate_load_config
+[ -n "${CONTINUITY_CMD:-}" ] || { echo "kontinuitaet: CONTINUITY_CMD ist leer" >&2; exit 2; }
+
+set +e
+judge_output="$(bash -c "$CONTINUITY_CMD" 2>&1)"
+judge_rc=$?
+set -e
+[ "$judge_rc" = 0 ] || { printf '%s\n' "$judge_output"; echo "kontinuitaet: Judge-Infrastruktur rc=$judge_rc" >&2; exit 2; }
+printf '%s\n' "$judge_output"
+verdict="$(jq -r '.verdict // empty' <<<"$judge_output" 2>/dev/null || true)"
+reason="$(jq -r '.reason // "ohne Begründung"' <<<"$judge_output" 2>/dev/null || true)"
+case "$verdict" in
+  PASS) echo "kontinuitaet: PASS — $reason" ;;
+  FAIL) echo "kontinuitaet: FAIL — $reason"; exit 1 ;;
+  *) echo "kontinuitaet: ungültiges Judge-JSON" >&2; exit 2 ;;
+esac

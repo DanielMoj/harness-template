@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$ORCH/gates.d/_lib.sh"
+gate_load_config
+mkdir -p "$GATE_ARTIFACT_DIR"
+gate_run_configured SHOTS_CMD shots
