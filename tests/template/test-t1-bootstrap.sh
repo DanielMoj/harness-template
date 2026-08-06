@@ -21,7 +21,8 @@ bootstrap_once() {
   local -a env_args
   local -a bootstrap_args
   env_args=("MCP_ENV_DIR=$CASE_ROOT/mcp-venv" "TUNNEL_MODE=quick" \
-    "PROJECT_SLUG=$SLUG" "PORT=$PORT_VALUE")
+    "PROJECT_SLUG=$SLUG" "PORT=$PORT_VALUE" \
+    "TUNNEL_TOKEN=fixture-tunnel-secret" "OPENAI_API_KEY=sk-fixture-openai")
   bootstrap_args=(--non-interactive)
   [ "${HARNESS_T1_WITH_TUNNEL:-0}" = 1 ] || bootstrap_args+=(--no-start)
   if [ -n "${HARNESS_MCP_PYTHON:-}" ]; then
@@ -29,7 +30,8 @@ bootstrap_once() {
   fi
   (
     cd "$REPO"
-    env "${env_args[@]}" bash bootstrap.sh "${bootstrap_args[@]}"
+    env -i PATH="$PATH" HOME="$CASE_ROOT/home" LANG="${LANG:-C.UTF-8}" \
+      "${env_args[@]}" bash bootstrap.sh "${bootstrap_args[@]}"
   )
 }
 
@@ -43,6 +45,11 @@ bootstrap_once
   jq -e --arg project "$SLUG" '.contract==1 and .project==$project and (.ts|length)>0 and .milestone.id=="M0" and (.gates|type)=="object" and (.parked|type)=="array"' \
     orchestrator/state/summary.json
   test -f orchestrator/config.env
+  test -f orchestrator/secrets.env
+  test "$(stat -c '%a' orchestrator/secrets.env)" = 600
+  ! grep -Eq '^(TUNNEL_TOKEN|OPENAI_API_KEY)=' orchestrator/config.env
+  grep -Fqx 'TUNNEL_TOKEN=fixture-tunnel-secret' orchestrator/secrets.env
+  grep -Fqx 'OPENAI_API_KEY=sk-fixture-openai' orchestrator/secrets.env
   test -f orchestrator/milestones.json
   test -f toolchain.json
   test "$(cat orchestrator/mcp/requirements.txt)" = 'mcp==1.28.1'
@@ -62,4 +69,4 @@ bootstrap_once
   fi
   jq -c '{contract,project,milestone,phase,gates,parked,exit}' orchestrator/state/summary.json
 )
-echo "T-1 PASS: bootstrap=2 summary=contract-v1 repo-env=absent mcp-manifest=pinned tunnel=${HARNESS_T1_WITH_TUNNEL:-0}"
+echo "T-1 PASS: bootstrap=2 summary=contract-v1 repo-env=absent mcp-manifest=pinned secrets=isolated tunnel=${HARNESS_T1_WITH_TUNNEL:-0}"

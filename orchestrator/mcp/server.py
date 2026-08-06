@@ -15,7 +15,7 @@ Pfad und keinen Options-Schmuggel bilden.
 Selbsttest (Guards statisch; dazu EIN echter Mini-Lauf 'git status --short',
 falls REPO existiert):
     python3 server.py --selftest
-Nur die Allowlist-Regeln (ohne jede Befehlsausfuehrung):
+Allowlist-Regeln plus isolierte Temp-Fixture fuer rekursives grep:
     python3 orchestrator/mcp/tests/test_allowlist.py
 """
 
@@ -46,6 +46,12 @@ if not re.fullmatch(r"/mcp(?:-[a-f0-9]{16,64})?", MCP_PATH):
 SERVER_NAME = os.environ.get("PROJECT_SLUG", os.path.basename(REPO)) + "-repo"
 LOGDATEI = os.environ.get("MCP_AUDIT_LOG", os.path.join(HIER, "calls.log"))
 MAX_BEFEHL_AUSGABE = 40000
+REKURSIVE_GREP_WURZELN = (
+    "orchestrator/logs",
+    "orchestrator/state",
+    "orchestrator/handoff",
+    "docs",
+)
 
 # Einziger Schreibpfad des Servers (repo-relativ) und Groessendeckel.
 LESSONS_REL = "orchestrator/LESSONS.md"
@@ -147,6 +153,30 @@ def pruefe_befehl(cmd):
         if re.fullmatch(muster, c):
             return True, timeout
     return False, "abgelehnt: kein Allowlist-Treffer"
+
+
+def grep_argv(cmd):
+    """Validiert den grep-Pfad semantisch und liefert ein argv ohne Shell.
+
+    Rekursive Suchen bleiben auf vier analysebezogene Verzeichniswurzeln
+    begrenzt. ``--exclude=*.env`` wird unabhängig vom Aufrufer erzwungen.
+    """
+    treffer = re.fullmatch(rf"^grep -(n|rn) ({MUSTER}) ({PFAD})$", cmd)
+    if not treffer:
+        return None, None
+    flags, muster, pfad = treffer.groups()
+    voll, grund = pruefe_pfad(pfad)
+    if voll is None:
+        return None, grund
+    if flags == "rn":
+        normalisiert = pfad.strip("/")
+        erlaubt = any(
+            normalisiert == wurzel or normalisiert.startswith(wurzel + "/")
+            for wurzel in REKURSIVE_GREP_WURZELN
+        )
+        if not erlaubt or not os.path.isdir(voll):
+            return None, "abgelehnt: rekursiver grep-Pfad nicht in der Verzeichnis-Allowlist"
+    return ["grep", f"-{flags}", "--exclude=*.env", "--", muster, pfad], None
 
 
 def pruefe_lessons(inhalt):
@@ -256,7 +286,9 @@ def befehl(cmd: str) -> str:
     Erlaubt: git status[ --short], git log --oneline[ -N], git diff[ --stat]
     [pfad], git show <sha>[ --stat], wc -l <pfad>, tail -n N <pfad>,
     grep -n|-rn <muster> <pfad> (Muster: alphanumerisch beginnend, Zeichen
-    aus [A-Za-z0-9_.:-]). Pfade sind repo-relativ ohne fuehrenden Punkt/Slash.
+    aus [A-Za-z0-9_.:-]). Rekursives grep ist auf orchestrator/logs,
+    orchestrator/state, orchestrator/handoff und docs begrenzt und erzwingt
+    den Ausschluss von *.env. Pfade sind repo-relativ ohne fuehrenden Punkt/Slash.
     Alles andere wird abgelehnt — insbesondere startet dieser Kanal keine
     Laeufe (kein bash, npm, rm): Laeufe startet der Betreiber im Terminal.
     """
@@ -267,9 +299,13 @@ def befehl(cmd: str) -> str:
         return wert
     timeout = wert
     logge("befehl", f"ok (timeout {timeout}s)", c)
+    grep_befehl, grep_fehler = grep_argv(c)
+    if grep_fehler is not None:
+        logge("befehl", grep_fehler, c)
+        return grep_fehler
     try:
         lauf = subprocess.run(
-            [BASH, "-c", c],
+            grep_befehl if grep_befehl is not None else [BASH, "-c", c],
             cwd=REPO,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

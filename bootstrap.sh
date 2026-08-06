@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 REPO_ROOT="$PWD"
 ORCH="$REPO_ROOT/orchestrator"
+SECRETS="$ORCH/secrets.env"
 UPDATE=0
 NONINTERACTIVE=0
 NO_START=0
@@ -54,20 +55,57 @@ if [ ! -f "$ORCH/config.env" ]; then
   NEW_CONFIG=1
   say "config.env aus Vorlage erzeugt"
 fi
+if [ ! -f "$SECRETS" ]; then
+  : > "$SECRETS"
+  chmod 600 "$SECRETS"
+  say "secrets.env für Tunnel-Token und API-Keys erzeugt"
+fi
+chmod 600 "$SECRETS"
 [ -f toolchain.json ] || { cp toolchain.json.example toolchain.json; say "toolchain.json aus Vorlage erzeugt"; }
 [ -f "$ORCH/milestones.json" ] || { cp "$ORCH/milestones.json.example" "$ORCH/milestones.json"; say "milestones.json aus Vorlage erzeugt"; }
 
 set_config() {
-  local key="$1" value="$2" quoted replacement tmp
-  printf -v quoted '%q' "$value"
-  replacement="$key=$quoted"
+  local key="$1" value="$2" tmp line found=0
+  [[ "$key" =~ (API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE_KEY) ]] \
+    && fatal "$key ist ein Geheimnis und gehört in orchestrator/secrets.env"
   tmp="$ORCH/.config.env.tmp.$$"
-  awk -v key="$key" -v replacement="$replacement" '
-    BEGIN{done=0}
-    $0 ~ "^" key "=" {print replacement; done=1; next}
-    {print}
-    END{if(!done) print replacement}
-  ' "$ORCH/config.env" > "$tmp"
+  : > "$tmp"
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ "$line" == "$key="* ]]; then
+      printf '%s=%q\n' "$key" "$value" >> "$tmp"
+      found=1
+    else
+      printf '%s\n' "$line" >> "$tmp"
+    fi
+  done < "$ORCH/config.env"
+  [ "$found" = 1 ] || printf '%s=%q\n' "$key" "$value" >> "$tmp"
+  mv "$tmp" "$ORCH/config.env"
+  chmod 600 "$ORCH/config.env"
+}
+
+set_secret() {
+  local key="$1" value="$2" tmp line found=0
+  tmp="$ORCH/.secrets.env.tmp.$$"
+  : > "$tmp"
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ "$line" == "$key="* ]]; then
+      printf '%s=%q\n' "$key" "$value" >> "$tmp"
+      found=1
+    else
+      printf '%s\n' "$line" >> "$tmp"
+    fi
+  done < "$SECRETS"
+  [ "$found" = 1 ] || printf '%s=%q\n' "$key" "$value" >> "$tmp"
+  mv "$tmp" "$SECRETS"
+  chmod 600 "$SECRETS"
+}
+
+remove_config_key() {
+  local key="$1" tmp="$ORCH/.config.env.tmp.$$" line
+  : > "$tmp"
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ "$line" == "$key="* ]] || printf '%s\n' "$line" >> "$tmp"
+  done < "$ORCH/config.env"
   mv "$tmp" "$ORCH/config.env"
   chmod 600 "$ORCH/config.env"
 }
@@ -81,10 +119,25 @@ REQUESTED_PORT="${PORT:-}"
 REQUESTED_MCP_ENV_DIR="${MCP_ENV_DIR:-}"
 REQUESTED_MCP_PYTHON="${MCP_PYTHON:-}"
 REQUESTED_CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-}"
-set -a
+SECRET_KEYS="TUNNEL_TOKEN OPENAI_API_KEY ANTHROPIC_API_KEY OPENROUTER_API_KEY QA_API_KEY ${HARNESS_SECRET_KEYS:-}"
+declare -A REQUESTED_SECRET_VALUES=()
+declare -A CONFIG_SECRET_VALUES=()
+for secret_name in $SECRET_KEYS; do
+  [[ "$secret_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || fatal "ungültiger Geheimnisname: $secret_name"
+  REQUESTED_SECRET_VALUES["$secret_name"]="${!secret_name:-}"
+done
 # shellcheck disable=SC1091
 source "$ORCH/config.env"
-set +a
+for secret_name in $SECRET_KEYS; do
+  CONFIG_SECRET_VALUES["$secret_name"]="${!secret_name:-}"
+done
+# shellcheck disable=SC1091
+source "$SECRETS"
+for secret_name in $SECRET_KEYS; do
+  secret_value="${REQUESTED_SECRET_VALUES[$secret_name]:-${!secret_name:-${CONFIG_SECRET_VALUES[$secret_name]:-}}}"
+  [ -z "$secret_value" ] || set_secret "$secret_name" "$secret_value"
+  remove_config_key "$secret_name"
+done
 
 SLUG="${REQUESTED_PROJECT_SLUG:-${PROJECT_SLUG:-}}"
 [ -n "$SLUG" ] && [ "$SLUG" != harness-project ] \
@@ -126,7 +179,7 @@ if [ "$MODE" = named ]; then
   [ -n "$TOKEN_VALUE" ] || [ -n "$NAME_VALUE" ] || fatal "named-Tunnel benötigt TUNNEL_TOKEN oder TUNNEL_NAME"
   set_config TUNNEL_HOSTNAME "$HOSTNAME_VALUE"
   set_config TUNNEL_NAME "$NAME_VALUE"
-  set_config TUNNEL_TOKEN "$TOKEN_VALUE"
+  set_secret TUNNEL_TOKEN "$TOKEN_VALUE"
   EXISTING_PATH="${MCP_PATH:-}"
   if ! grep -Eq '^/mcp-[a-f0-9]{16,64}$' <<<"$EXISTING_PATH"; then
     RANDOM_SUFFIX="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
@@ -192,7 +245,8 @@ fi
 [ -z "$CLOUDFLARED_VALUE" ] || set_config CLOUDFLARED_BIN "$CLOUDFLARED_VALUE"
 
 say "MCP-Guards und Statusvertrag prüfen"
-REPO_PATH="$REPO_ROOT" "$MCP_PYTHON_VALUE" "$ORCH/mcp/server.py" --selftest
+env -i PATH="${PATH:-/usr/local/bin:/usr/bin:/bin}" HOME="${HOME:-/tmp}" LANG="${LANG:-C.UTF-8}" \
+  REPO_PATH="$REPO_ROOT" "$MCP_PYTHON_VALUE" "$ORCH/mcp/server.py" --selftest
 bash "$ORCH/status.sh"
 jq -e '.contract==1 and (.project|length>0) and (.ts|length>0) and (.milestone|type=="object") and (.gates|type=="object") and (.parked|type=="array")' "$ORCH/state/summary.json" >/dev/null
 echo "bootstrap: summary.json contract v1 gültig"

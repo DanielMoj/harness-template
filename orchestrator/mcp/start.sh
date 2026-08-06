@@ -7,12 +7,17 @@ REPO_ROOT="$PWD"
 ORCH="$REPO_ROOT/orchestrator"
 MCP_DIR="$ORCH/mcp"
 CONFIG="$ORCH/config.env"
+SECRETS="$ORCH/secrets.env"
 [ -f "$CONFIG" ] || { echo "mcp-start: $CONFIG fehlt" >&2; exit 2; }
 
-set -a
 # shellcheck disable=SC1090
 source "$CONFIG"
-set +a
+if [ -f "$SECRETS" ]; then
+  [ "$(stat -c '%a' "$SECRETS")" = 600 ] \
+    || { echo "mcp-start: $SECRETS muss Modus 600 haben" >&2; exit 2; }
+  # shellcheck disable=SC1090
+  source "$SECRETS"
+fi
 
 REPO_PATH="${REPO_PATH:-$REPO_ROOT}"
 MCP_HOST="${MCP_HOST:-127.0.0.1}"
@@ -46,7 +51,8 @@ cleanup() {
 trap 'cleanup $?' EXIT INT TERM
 
 echo "mcp-start: Server $MCP_HOST:$PORT$MCP_PATH (REPO_PATH=$REPO_PATH)"
-REPO_PATH="$REPO_PATH" MCP_HOST="$MCP_HOST" PORT="$PORT" MCP_PATH="$MCP_PATH" \
+env -i PATH="${PATH:-/usr/local/bin:/usr/bin:/bin}" HOME="${HOME:-/tmp}" LANG="${LANG:-C.UTF-8}" \
+  REPO_PATH="$REPO_PATH" MCP_HOST="$MCP_HOST" PORT="$PORT" MCP_PATH="$MCP_PATH" \
   PROJECT_SLUG="${PROJECT_SLUG:-$(basename "$REPO_ROOT")}" \
   "$MCP_PYTHON" "$MCP_DIR/server.py" > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
@@ -64,7 +70,8 @@ echo "mcp-start: Serverprobe HTTP $HTTP_CODE"
 ORIGIN="http://$MCP_HOST:$PORT"
 case "$TUNNEL_MODE" in
   quick)
-    "$CLOUDFLARED_BIN" tunnel --url "$ORIGIN" > "$TUNNEL_LOG" 2>&1 &
+    env -i PATH="${PATH:-/usr/local/bin:/usr/bin:/bin}" HOME="${HOME:-/tmp}" LANG="${LANG:-C.UTF-8}" \
+      "$CLOUDFLARED_BIN" tunnel --url "$ORIGIN" > "$TUNNEL_LOG" 2>&1 &
     TUNNEL_PID=$!
     PUBLIC_BASE=""
     for _ in $(seq 1 40); do
@@ -78,9 +85,11 @@ case "$TUNNEL_MODE" in
   named)
     [ -n "${TUNNEL_HOSTNAME:-}" ] || { echo "mcp-start: TUNNEL_HOSTNAME fehlt" >&2; exit 2; }
     if [ -n "${TUNNEL_TOKEN:-}" ]; then
-      TUNNEL_TOKEN="$TUNNEL_TOKEN" "$CLOUDFLARED_BIN" tunnel run --url "$ORIGIN" > "$TUNNEL_LOG" 2>&1 &
+      env -i PATH="${PATH:-/usr/local/bin:/usr/bin:/bin}" HOME="${HOME:-/tmp}" LANG="${LANG:-C.UTF-8}" \
+        TUNNEL_TOKEN="$TUNNEL_TOKEN" "$CLOUDFLARED_BIN" tunnel run --url "$ORIGIN" > "$TUNNEL_LOG" 2>&1 &
     elif [ -n "${TUNNEL_NAME:-}" ]; then
-      "$CLOUDFLARED_BIN" tunnel run --url "$ORIGIN" "$TUNNEL_NAME" > "$TUNNEL_LOG" 2>&1 &
+      env -i PATH="${PATH:-/usr/local/bin:/usr/bin:/bin}" HOME="${HOME:-/tmp}" LANG="${LANG:-C.UTF-8}" \
+        "$CLOUDFLARED_BIN" tunnel run --url "$ORIGIN" "$TUNNEL_NAME" > "$TUNNEL_LOG" 2>&1 &
     else
       echo "mcp-start: TUNNEL_TOKEN oder TUNNEL_NAME fehlt" >&2
       exit 2

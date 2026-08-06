@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""test_allowlist.py — Abnahme der Allowlist-Regelfunktion pruefe_befehl().
+"""test_allowlist.py — Abnahme der Allowlist und der grep-Pfadgrenzen.
 
-Prueft NUR die Regel-Funktion: es wird KEIN Befehl ausgefuehrt und keine
-Datei angefasst. Dazu eine Strukturprobe direkt auf den Regexen, die den
+Die statischen Regeln werden ohne Ausfuehrung geprüft. Eine kleine, klar als
+Fixture markierte Temp-Struktur führt zusätzlich die rekursiven grep-Fälle
+aus. Dazu eine Strukturprobe direkt auf den Regexen, die den
 '..'-Pre-Filter bewusst umgeht: '..'-Traversal, absolute Pfade und
 Options-Schmuggel ('-'-beginnende Tokens in Pfad-/Muster-Position) duerfen
 strukturell KEIN Muster treffen KOENNEN.
@@ -14,6 +15,7 @@ Aufruf: python3 orchestrator/mcp/tests/test_allowlist.py
 import os
 import re
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import server  # noqa: E402  (Import nach sys.path-Erweiterung)
@@ -112,6 +114,37 @@ def main():
     for boese in STRUKTUR_BOESE:
         treffer = [m for m, _t in server.ALLOWLIST if re.fullmatch(m, boese)]
         fall(f"strukturell kein Regex-Treffer: {boese}", not treffer)
+
+    original_repo = server.REPO
+    with tempfile.TemporaryDirectory(prefix="harness-mcp-allowlist-") as temp_repo:
+        server.REPO = temp_repo
+        os.makedirs(os.path.join(temp_repo, "orchestrator", "logs"))
+        os.makedirs(os.path.join(temp_repo, "orchestrator", "state"))
+        os.makedirs(os.path.join(temp_repo, "orchestrator", "handoff"))
+        os.makedirs(os.path.join(temp_repo, "docs"))
+        with open(os.path.join(temp_repo, "orchestrator", "config.env"), "w", encoding="utf-8") as datei:
+            datei.write("OPENROUTER_API_KEY=sk-fixture-MUST-NOT-LEAK\n")
+        with open(os.path.join(temp_repo, "orchestrator", "logs", "probe.env"), "w", encoding="utf-8") as datei:
+            datei.write("API=sk-fixture-MUST-NOT-LEAK\n")
+        with open(os.path.join(temp_repo, "orchestrator", "logs", "safe.log"), "w", encoding="utf-8") as datei:
+            datei.write("ordinary log line\n")
+
+        antwort = server.befehl("grep -rn API orchestrator")
+        fall(
+            "rekursiver grep auf orchestrator-Wurzel gibt config.env nicht heraus",
+            "sk-fixture-MUST-NOT-LEAK" not in antwort and antwort.startswith("abgelehnt:"),
+        )
+        antwort = server.befehl("grep -rn API orchestrator/logs")
+        fall(
+            "rekursiver grep erzwingt --exclude=*.env",
+            "sk-fixture-MUST-NOT-LEAK" not in antwort and antwort.startswith("Exit-Code: 1"),
+        )
+    server.REPO = original_repo
+
+    result_file = os.environ.get("HARNESS_BEHAVIOR_RESULTS")
+    if result_file and all(faelle):
+        with open(result_file, "a", encoding="utf-8") as datei:
+            datei.write("mcp-allowlist\n")
 
     print(f"\ntest_allowlist: {sum(faelle)}/{len(faelle)} OK")
     return 0 if all(faelle) else 1

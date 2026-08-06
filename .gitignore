@@ -1,5 +1,6 @@
 # Geheimnisse und lokale Auswahl
 config.env
+orchestrator/secrets.env
 toolchain.json
 
 # Laufzeitumgebungen und Abhängigkeiten

@@ -14,10 +14,8 @@ if [ ! -f "$CONFIG" ]; then
   exit 2
 fi
 
-set -a
 # shellcheck disable=SC1090
 source "$CONFIG"
-set +a
 
 TS() { date +%Y%m%d-%H%M%S; }
 log() { printf '[%s] %s\n' "$(TS)" "$*" | tee -a "$ORCH/logs/orchestrate.log"; }
@@ -30,6 +28,9 @@ HALT_REQUESTED=0
 PHASE_COUNT=0
 OWNERSHIP_SNAPSHOT=""
 declare -A OWNERSHIP_BEFORE=()
+declare -A OWNERSHIP_ARTIFACT_BEFORE=()
+declare -a OWNERSHIP_REMOVE=()
+declare -a MODEL_ENV=()
 
 # Neue Werte werden nur als Defaults gesetzt; config.env gewinnt einzeln.
 AUTONOMY_LEVEL="${AUTONOMY_LEVEL:-2}"
@@ -211,11 +212,11 @@ preflight() {
     while [ "$attempt" -le "$QA_PROBE_RETRIES" ]; do
       probe_file="$ORCH/logs/qa-probe-$(TS)-$attempt.md"
       printf '%s\n' "Antworte nur: OK" > "$probe_file"
-      export PROMPT_FILE="$probe_file"
+      build_model_env QA "$probe_file"
       if command -v timeout >/dev/null 2>&1; then
-        if probe_out="$(timeout "$QA_PROBE_TIMEOUT" bash -c "$QA_CMD" 2>&1)"; then rc=0; else rc=$?; fi
+        if probe_out="$(timeout "$QA_PROBE_TIMEOUT" env -i "${MODEL_ENV[@]}" bash -c "$QA_CMD" 2>&1)"; then rc=0; else rc=$?; fi
       else
-        if probe_out="$(bash -c "$QA_CMD" 2>&1)"; then rc=0; else rc=$?; fi
+        if probe_out="$(env -i "${MODEL_ENV[@]}" bash -c "$QA_CMD" 2>&1)"; then rc=0; else rc=$?; fi
       fi
       if [ "$rc" = 0 ] && grep -q 'OK' <<<"$probe_out"; then
         log "QA-Routenprobe bestanden ($QA_MODEL)"
@@ -374,10 +375,37 @@ ownership_check() {
   return 0
 }
 
+build_model_env() {
+  local role="$1" prompt="$2" names="" name value
+  MODEL_ENV=(
+    "PROMPT_FILE=$prompt"
+    "PATH=${PATH:-/usr/local/bin:/usr/bin:/bin}"
+    "HOME=${HOME:-/tmp}"
+    "LANG=${LANG:-C.UTF-8}"
+  )
+  case "$role" in
+    BUILDER|builder) names="${BUILDER_ENV_ALLOWLIST:-}" ;;
+    REVIEWER|reviewer) names="${REVIEWER_ENV_ALLOWLIST:-}" ;;
+    QA|qa) names="${QA_ENV_ALLOWLIST:-}" ;;
+    *) fatal "unbekannte Rolle für Umgebungs-Allowlist: $role" ;;
+  esac
+  for name in $names; do
+    [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
+      || fatal "$role-ENV_ALLOWLIST enthält ungültigen Variablennamen: $name"
+    if [[ "$name" =~ (API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE_KEY) ]]; then
+      fatal "$role-ENV_ALLOWLIST darf keine Geheimnisvariable enthalten: $name"
+    fi
+    if [[ -v "$name" ]]; then
+      value="${!name}"
+      MODEL_ENV+=("$name=$value")
+    fi
+  done
+}
+
 run_model() {
   local role="$1" prompt="$2" phase="$3" ms="$4" round="${5:-1}" dispute="${6:-code}"
   stop_check
-  local cmd stamp log_file base config_hash try=0 territory_retry=0 sleep_s="$RETRY_SLEEP" rc
+  local cmd stamp log_file base config_hash try=0 territory_retry=0 attempt=0 sleep_s="$RETRY_SLEEP" rc
   case "$role" in
     builder) cmd="$BUILDER_CMD" ;;
     reviewer) cmd="$REVIEWER_CMD" ;;
@@ -386,20 +414,40 @@ run_model() {
   esac
 
   stamp="$(TS)"
-  export PROMPT_FILE="$ORCH/logs/$ms-$phase-r$round-$stamp-prompt.md"
-  render_prompt "$prompt" "$ms" "$round" "$dispute" > "$PROMPT_FILE"
-  log_file="$ORCH/logs/$ms-$phase-r$round-$stamp.log"
-  base="$(git rev-parse HEAD)"
+  PROMPT_FILE="$ORCH/logs/$ms-$phase-r$round-$stamp-prompt.md"
+  if ! render_prompt "$prompt" "$ms" "$round" "$dispute" > "$PROMPT_FILE"; then
+    rm -f -- "$PROMPT_FILE"
+    fatal "Prompt $prompt kann nicht nach $PROMPT_FILE gerendert werden."
+  fi
+  base="$(git rev-parse HEAD)" || fatal "Basis-SHA vor $role/$phase kann nicht bestimmt werden."
   config_hash="$(sha256sum "$CONFIG" | awk '{print $1}')"
   snapshot_worktree
 
   while :; do
     stop_check
-    log "RUN $role $phase ($ms r$round, Versuch $((try+1))) -> $log_file"
+    attempt=$((attempt+1))
+    log_file="$ORCH/logs/$ms-$phase-r$round-a$attempt-$(TS).log"
+    ACTIVE_MODEL_LOG="$log_file"
+    log "RUN $role $phase ($ms r$round, Versuch $attempt) -> $log_file"
+    snapshot_phase_logs "$log_file"
+    build_model_env "$role" "$PROMPT_FILE"
     if command -v timeout >/dev/null 2>&1; then
-      if timeout "$PHASE_TIMEOUT" bash -c "$cmd" > "$log_file" 2>&1; then rc=0; else rc=$?; fi
+      if timeout "$PHASE_TIMEOUT" env -i "${MODEL_ENV[@]}" bash -c "$cmd" > "$log_file" 2>&1; then rc=0; else rc=$?; fi
     else
-      if bash -c "$cmd" > "$log_file" 2>&1; then rc=0; else rc=$?; fi
+      if env -i "${MODEL_ENV[@]}" bash -c "$cmd" > "$log_file" 2>&1; then rc=0; else rc=$?; fi
+    fi
+
+    if ! phase_logs_intact; then
+      OWNERSHIP_BAD="orchestrator/logs/** (Hash-Manifest)"
+      restore_worktree "$base"
+      if [ "$territory_retry" = 0 ]; then
+        territory_retry=1
+        log "WARN: $role verletzt Territorium: $OWNERSHIP_BAD — genau ein Retry mit Hinweis"
+        printf '\nWICHTIG: Der vorige Versuch wurde wegen Territoriumsverletzung verworfen: %s. Wiederhole die Phase ohne diese Pfade; eine benötigte fremde Änderung wird im Handoff dokumentiert.\n' "$OWNERSHIP_BAD" >> "$PROMPT_FILE"
+        continue
+      fi
+      clear_worktree_snapshot
+      fatal "$role verletzt Territorium wiederholt: $OWNERSHIP_BAD"
     fi
 
     if [ "$rc" -ne 0 ]; then
@@ -409,7 +457,6 @@ run_model() {
         log "WARN: Transportfehler $role/$phase rc=$rc — Retry $try/$RETRY_MAX in ${sleep_s}s; keine Runde verbraucht"
         sleep "$sleep_s"
         sleep_s=$((sleep_s*2))
-        log_file="$ORCH/logs/$ms-$phase-r$round-$(TS).log"
         continue
       fi
       restore_worktree "$base"
@@ -424,7 +471,6 @@ run_model() {
       territory_retry=1
       log "WARN: $role verletzt Territorium: $OWNERSHIP_BAD — genau ein Retry mit Hinweis"
       printf '\nWICHTIG: Der vorige Versuch wurde wegen Territoriumsverletzung verworfen: %s. Wiederhole die Phase ohne diese Pfade; eine benötigte fremde Änderung wird im Handoff dokumentiert.\n' "$OWNERSHIP_BAD" >> "$PROMPT_FILE"
-      log_file="$ORCH/logs/$ms-$phase-r$round-$(TS).log"
       continue
     fi
     fatal "$role verletzt Territorium wiederholt: $OWNERSHIP_BAD"
