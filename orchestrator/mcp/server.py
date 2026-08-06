@@ -298,6 +298,15 @@ def befehl(cmd: str) -> str:
         logge("befehl", wert, c)
         return wert
     timeout = wert
+    pfad_treffer = re.fullmatch(
+        rf"^(?:git diff(?: --stat)?|wc -l|tail -n [0-9]{{1,4}}) (?P<pfad>{PFAD})$",
+        c,
+    )
+    if pfad_treffer is not None:
+        _voll, pfad_fehler = pruefe_pfad(pfad_treffer.group("pfad"))
+        if pfad_fehler is not None:
+            logge("befehl", pfad_fehler, c)
+            return pfad_fehler
     logge("befehl", f"ok (timeout {timeout}s)", c)
     grep_befehl, grep_fehler = grep_argv(c)
     if grep_fehler is not None:

@@ -116,18 +116,32 @@ def main():
         fall(f"strukturell kein Regex-Treffer: {boese}", not treffer)
 
     original_repo = server.REPO
-    with tempfile.TemporaryDirectory(prefix="harness-mcp-allowlist-") as temp_repo:
+    with tempfile.TemporaryDirectory(prefix="harness-mcp-allowlist-") as temp_repo, \
+            tempfile.TemporaryDirectory(prefix="harness-mcp-outside-") as temp_outside:
         server.REPO = temp_repo
         os.makedirs(os.path.join(temp_repo, "orchestrator", "logs"))
         os.makedirs(os.path.join(temp_repo, "orchestrator", "state"))
         os.makedirs(os.path.join(temp_repo, "orchestrator", "handoff"))
         os.makedirs(os.path.join(temp_repo, "docs"))
+        os.makedirs(os.path.join(temp_repo, "src"))
         with open(os.path.join(temp_repo, "orchestrator", "config.env"), "w", encoding="utf-8") as datei:
+            datei.write("OPENROUTER_API_KEY=sk-fixture-MUST-NOT-LEAK\n")
+        with open(os.path.join(temp_repo, "orchestrator", "secrets.env"), "w", encoding="utf-8") as datei:
             datei.write("OPENROUTER_API_KEY=sk-fixture-MUST-NOT-LEAK\n")
         with open(os.path.join(temp_repo, "orchestrator", "logs", "probe.env"), "w", encoding="utf-8") as datei:
             datei.write("API=sk-fixture-MUST-NOT-LEAK\n")
         with open(os.path.join(temp_repo, "orchestrator", "logs", "safe.log"), "w", encoding="utf-8") as datei:
             datei.write("ordinary log line\n")
+        outside_file = os.path.join(temp_outside, "outside.txt")
+        with open(outside_file, "w", encoding="utf-8") as datei:
+            datei.write("outside fixture must not be readable\n")
+        symlink_faelle = (
+            ("secrets.env", "src/notiz", "../orchestrator/secrets.env"),
+            ("config.env", "src/konfig", "../orchestrator/config.env"),
+            ("Repo-Aussengrenze", "src/aussen", outside_file),
+        )
+        for _ziel, link, quelle in symlink_faelle:
+            os.symlink(quelle, os.path.join(temp_repo, link))
 
         antwort = server.befehl("grep -rn API orchestrator")
         fall(
@@ -139,6 +153,13 @@ def main():
             "rekursiver grep erzwingt --exclude=*.env",
             "sk-fixture-MUST-NOT-LEAK" not in antwort and antwort.startswith("Exit-Code: 1"),
         )
+        for befehlsanfang in ("tail -n 40", "wc -l", "git diff"):
+            for ziel, link, _quelle in symlink_faelle:
+                antwort = server.befehl(f"{befehlsanfang} {link}")
+                fall(
+                    f"{befehlsanfang} lehnt Symlink auf {ziel} ab",
+                    antwort.startswith("abgelehnt:"),
+                )
     server.REPO = original_repo
 
     result_file = os.environ.get("HARNESS_BEHAVIOR_RESULTS")
