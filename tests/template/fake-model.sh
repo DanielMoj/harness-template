@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = --help ]; then
-  echo "fake-model --help (frische Einweg-Session; keine Resume-Flags)"
+  echo "fake-model --help --fixture-safe (frische Einweg-Session; keine Resume-Flags)"
   exit 0
 fi
 
@@ -27,9 +27,8 @@ mkdir -p "$HANDOFF"
 
 if [ "${ACCEPTANCE_TRANSPORT_PROBE:-0}" = 1 ] && [ "$MS" = M0 ] \
   && [ "$PHASE" = 20-plan ]; then
-  transport_marker="$ORCH/logs/.acceptance-transport-once.log"
-  if [ ! -f "$transport_marker" ]; then
-    printf 'first transport attempt consumed\n' > "$transport_marker"
+  transport_attempts="$(find "$ORCH/logs" -maxdepth 1 -type f -name "$MS-$PHASE-r$ROUND-a*.log" | wc -l)"
+  if [ "$transport_attempts" = 1 ]; then
     echo 'HTTP 503 temporarily unavailable (intentional acceptance probe)' >&2
     exit 75
   fi
@@ -53,6 +52,9 @@ json_to_file() {
 case "$PHASE" in
   10-acceptance)
     [ "$ROLE" = reviewer ] || exit 2
+    if [ "${ACCEPTANCE_REVIEWER_EXTRA_PATH_PROBE:-0}" = 1 ]; then
+      printf 'Normative fixture style guide.\n' > stilbibel.md
+    fi
     criteria='[]'
     while IFS= read -r id; do
       quote="$(grep -F -- "$id:" docs/99-acceptance-fixture.md | head -n 1)"
@@ -88,14 +90,28 @@ case "$PHASE" in
     ;;
   40-build)
     [ "$ROLE" = builder ] || exit 2
+    if [ "${ACCEPTANCE_HIDDEN_TERRITORY_PROBE:-0}" = 1 ] \
+        && ! grep -Fq 'vorige Versuch wurde wegen Territoriumsverletzung verworfen' "$PROMPT_FILE"; then
+      mkdir -p orchestrator/.lock reports
+      printf 'model wrote operator territory\n' > orchestrator/.lock/stray
+      printf 'model artifact from rejected attempt\n' > reports/evil.txt
+    fi
+    if [ "${ACCEPTANCE_LOG_TAMPER_PROBE:-0}" = 1 ] \
+        && ! grep -Fq 'vorige Versuch wurde wegen Territoriumsverletzung verworfen' "$PROMPT_FILE"; then
+      previous_prompt="$(find orchestrator/logs -maxdepth 1 -type f -name "$MS-10-acceptance-*-prompt.md" | head -n 1)"
+      [ -z "$previous_prompt" ] || printf '\nFAELSCHUNG durch das Modell\n' >> "$previous_prompt"
+    fi
     mkdir -p src
     printf 'fixture implementation for %s\n' "$MS" > "src/$MS.txt"
+    if [ "${ACCEPTANCE_ENV_CAPTURE:-0}" = 1 ]; then
+      env | LC_ALL=C sort > src/model-env.txt
+    fi
     printf '\n- %s build r%s: `printf fixture` → exit 0\n' "$MS" "$ROUND" >> PROGRESS.md
     ;;
   50-code-review)
     [ "$ROLE" = reviewer ] || exit 2
     gate_result="$(jq -r '.result' "$ORCH/state/$MS/gates.json")"
-    if [ "$gate_result" = pass ]; then
+    if [ "$gate_result" = pass ] || [ "${ACCEPTANCE_SCENARIO:-}" = TERROR ]; then
       printf '# REVIEW %s r%s\n\nGates sind gruen; keine blocking-Befunde.\n' "$MS" "$ROUND" \
         > "$HANDOFF/REVIEW.md"
       json_to_file "$HANDOFF/verdict-code.json" \
@@ -137,8 +153,13 @@ case "$PHASE" in
       '{milestone:$ms,phase:"code",round:$round,verdict:"HUMAN",directive:"Betreiber muss den absichtlichen Dauer-Fail aufloesen."}'
     ;;
   45-qa)
-    echo "fake-model: QA ist in diesen Szenarien deaktiviert" >&2
-    exit 2
+    [ "$ROLE" = qa ] || exit 2
+    mkdir -p tests/e2e
+    printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
+      "test -s src/$MS.txt" "echo '$MS QA fixture: PASS'" > "tests/e2e/$MS-qa.sh"
+    chmod +x "tests/e2e/$MS-qa.sh"
+    printf '# QA %s r%s\n\nAktive Fake-QA hat einen reproduzierbaren E2E-Zeugen geschrieben.\n' \
+      "$MS" "$ROUND" > "$HANDOFF/QA.md"
     ;;
 esac
 

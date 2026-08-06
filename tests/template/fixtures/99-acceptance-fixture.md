@@ -6,3 +6,7 @@
 - K-M1-1: Das Artefakt `src/M1.txt` existiert und ist nicht leer.
 - K-M1-2: Beide Gate-Steckplätze melden für M1 pass.
 - K-M1-3: Der unveränderliche Tag `done/M1` wird erzeugt.
+- K-setup-1: Das Artefakt `src/setup.txt` existiert und ist nicht leer.
+- K-setup-2: Die aktive QA schreibt einen ausführbaren E2E-Zeugen.
+- K-kapitel-eins-1: Das Artefakt `src/kapitel-eins.txt` existiert und ist nicht leer.
+- K-kapitel-eins-2: Die QA-Pflicht wird über die Manifestreihenfolge ausgewertet.

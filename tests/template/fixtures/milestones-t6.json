@@ -1,0 +1,16 @@
+[
+  {
+    "id": "setup",
+    "title": "Ziffernlose ID mit aktiver QA",
+    "criteriaRef": ["K-setup-1", "K-setup-2"],
+    "deps": [],
+    "effort": "low"
+  },
+  {
+    "id": "kapitel-eins",
+    "title": "Manifest-Index statt ID-Ziffer",
+    "criteriaRef": ["K-kapitel-eins-1", "K-kapitel-eins-2"],
+    "deps": ["setup"],
+    "effort": "low"
+  }
+]

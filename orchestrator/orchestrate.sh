@@ -815,7 +815,7 @@ arbiter() {
 }
 
 rebuild_reset() {
-  local ms="$1" path
+  local ms="$1" round="$2" path
   log "REBUILD $ms: Builder-Territorium zurück auf plan/$ms"
   for path in $REBUILD_PATHS; do
     case "$path" in /*|*..*) fatal "unsicherer REBUILD_PATHS-Eintrag: $path" ;; esac
@@ -840,6 +840,7 @@ rebuild_reset() {
     jq '.' "$ORCH/state/$ms/gates.json" 2>/dev/null || echo "_Fehlen._"
   } > "$ORCH/handoff/$ms/REBUILD-BRIEF.md"
   touch "$ORCH/state/$ms/5c-rebuild.done"
+  touch "$ORCH/state/$ms/rebuild-reset-r$round.done"
   commit_phase "$ms" 62-rebuild-reset "orch($ms): reset builder territory for rebuild"
 }
 
@@ -917,6 +918,10 @@ run_ms() {
   fi
 
   round="$(cat "$ORCH/state/$ms/round" 2>/dev/null || echo 1)"
+  if phase_done "$ms" "rebuild-reset-r$round" && ! phase_done "$ms" "rebuild-r$round"; then
+    model_phase builder 62-rebuild.md 62-rebuild "$ms" "$round" "rebuild-r$round"
+    if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
+  fi
   if ! phase_done "$ms" 5-built; then
     model_phase builder 40-build.md 40-build "$ms" "$round" 5-built
     if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
@@ -1014,7 +1019,7 @@ run_ms() {
       if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
       model_phase builder 62-rebuild.md 62-rebuild "$ms" "$round" "rebuild-r$round"
     else
-      model_phase builder 60-rework.md 60-rework "$ms" "$round"
+      model_phase builder 60-rework.md 60-rework "$ms" "$round" "rework-r$round"
     fi
     if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
   done
