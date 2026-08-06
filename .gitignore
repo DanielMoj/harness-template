@@ -25,6 +25,8 @@ test-results/
 !poetry.lock
 !uv.lock
 !renv.lock
+!orchestrator/.lock/
+!orchestrator/.lock/**
 
 # Vollständige lokale Transkripte; Gates/Zusammenfassungen bleiben versionierbar.
 orchestrator/logs/*.log

@@ -27,6 +27,7 @@ PARKED_LIST=""
 HALT_REQUESTED=0
 PHASE_COUNT=0
 OWNERSHIP_SNAPSHOT=""
+ACTIVE_MODEL_LOG=""
 declare -A OWNERSHIP_BEFORE=()
 declare -A OWNERSHIP_ARTIFACT_BEFORE=()
 declare -a OWNERSHIP_REMOVE=()
@@ -68,6 +69,8 @@ QA_PROBE_RETRIES="${QA_PROBE_RETRIES:-3}"
 QA_PROBE_TIMEOUT="${QA_PROBE_TIMEOUT:-180}"
 QA_PROBE_SLEEP="${QA_PROBE_SLEEP:-300}"
 REBUILD_PATHS="${REBUILD_PATHS:-src tools tests/unit tests/properties}"
+ROLE_GUARDS="${ROLE_GUARDS:-on}"
+ARTIFACT_ALLOWLIST="$ORCH/artifact-paths.allowlist"
 
 notify_event() {
   "$ORCH/notify.sh" "$@" >> "$ORCH/logs/orchestrate.log" 2>&1 || true
@@ -104,22 +107,32 @@ release_lock() {
 trap release_lock EXIT INT TERM
 
 acquire_lock() {
-  local lock="$ORCH/.lock" oldpid=""
-  if mkdir "$lock" 2>/dev/null; then
-    printf '%s\n' "$$" > "$lock/pid"
-    LOCK_HELD=1
-    return 0
-  fi
-  oldpid="$(cat "$lock/pid" 2>/dev/null || true)"
-  if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null; then
-    fatal "Orchestrator läuft bereits (PID $oldpid)."
-  fi
-  log "WARN: verwaister Lock (PID ${oldpid:-unbekannt}) — wird übernommen"
-  rm -f "$lock/pid"
-  rmdir "$lock" 2>/dev/null || fatal "verwaister Lock ist nicht leer: $lock"
-  mkdir "$lock" || fatal "Lock kann nicht angelegt werden: $lock"
-  printf '%s\n' "$$" > "$lock/pid"
-  LOCK_HELD=1
+  local lock="$ORCH/.lock" candidate oldpid="" foreign=""
+  while :; do
+    candidate="$(mktemp -d "$ORCH/.lock-candidate.XXXXXX")" \
+      || fatal "Lock-Kandidat kann nicht angelegt werden."
+    printf '%s\n' "$$" > "$candidate/pid" \
+      || { rm -rf -- "$candidate"; fatal "PID kann nicht in Lock-Kandidat geschrieben werden."; }
+    if mv -T -- "$candidate" "$lock" 2>/dev/null; then
+      LOCK_HELD=1
+      return 0
+    fi
+    rm -rf -- "$candidate"
+    [ -d "$lock" ] || continue
+
+    oldpid="$(cat "$lock/pid" 2>/dev/null || true)"
+    if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null; then
+      printf 'FATAL: Orchestrator läuft bereits (PID %s).\n' "$oldpid" >&2
+      exit 2
+    fi
+    foreign="$(find "$lock" -mindepth 1 -maxdepth 1 ! -name pid -print -quit 2>/dev/null || true)"
+    if [ -n "$foreign" ]; then
+      fatal "verwaister Lock enthält Fremdinhalt: $foreign. Aufräumen: PID prüfen, dann gezielt '$lock' entfernen."
+    fi
+    log "WARN: verwaister Lock (PID ${oldpid:-unbekannt}) — wird atomar übernommen"
+    rm -f -- "$lock/pid" || fatal "verwaiste Lock-PID kann nicht entfernt werden: $lock/pid"
+    rmdir -- "$lock" 2>/dev/null || continue
+  done
 }
 
 stop_check() {
@@ -200,7 +213,7 @@ preflight() {
 
   local dirty
   dirty="$(git status --porcelain --untracked-files=all | awk '{print substr($0,4)}' \
-    | grep -vE '^(STATUS\.md|orchestrator/STOP|orchestrator/state/summary\.json)$' || true)"
+    | grep -vE '^(STATUS\.md|orchestrator/STOP|orchestrator/state/summary\.json|orchestrator/\.lock(/.*)?)$' || true)"
   [ -z "$dirty" ] || fatal "Arbeitsbaum vor Lauf nicht sauber: $dirty"
 
   CURRENT_PHASE=preflight
@@ -251,8 +264,9 @@ transport_error() {
 
 rollback_attempt() {
   local base="$1"
-  git reset --hard "$base" -q
-  git clean -qfd -e config.env -e toolchain.json -e orchestrator/logs/ -e orchestrator/.lock/
+  git reset --hard "$base" -q || fatal "Rollback auf $base fehlgeschlagen."
+  git clean -qfd -e config.env -e secrets.env -e toolchain.json -e orchestrator/logs/ -e orchestrator/.lock/ \
+    || fatal "Bereinigung nach Modellversuch fehlgeschlagen."
 }
 
 path_fingerprint() {
@@ -268,8 +282,66 @@ path_fingerprint() {
   fi
 }
 
+artifact_path_allowed() {
+  local path="$1"
+  grep -Eq -f "$ARTIFACT_ALLOWLIST" <<<"$path"
+}
+
+all_untracked_paths() {
+  git ls-files --others -z
+}
+
 changed_paths() {
-  { git diff --name-only -z HEAD; git ls-files --others --exclude-standard -z; } | sort -zu
+  local path
+  while IFS= read -r -d '' path; do
+    case "$path" in orchestrator/logs/*) continue ;; esac
+    artifact_path_allowed "$path" && continue
+    printf '%s\0' "$path"
+  done < <({ git diff --name-only -z HEAD; all_untracked_paths; } | sort -zu)
+}
+
+tree_manifest() {
+  local root="$1" exclude="${2:-}" path rel
+  [ -d "$root" ] || return 0
+  while IFS= read -r -d '' path; do
+    [ "$path" != "$exclude" ] || continue
+    rel="${path#"$root"/}"
+    printf '%s\t%s\n' "$rel" "$(path_fingerprint "$path")"
+  done < <(find "$root" \( -type f -o -type l \) -print0 | LC_ALL=C sort -z)
+}
+
+snapshot_phase_logs() {
+  local active="$1" backup="$OWNERSHIP_SNAPSHOT/protected-logs"
+  rm -rf -- "$backup"
+  mkdir -p "$backup"
+  if [ -d "$ORCH/logs" ]; then
+    cp -a "$ORCH/logs/." "$backup/"
+  fi
+  rm -f -- "$backup/${active#"$ORCH/logs/"}"
+  tree_manifest "$backup" > "$OWNERSHIP_SNAPSHOT/protected-logs.sha256"
+}
+
+phase_logs_intact() {
+  local current="$OWNERSHIP_SNAPSHOT/current-logs.sha256"
+  tree_manifest "$ORCH/logs" "$ACTIVE_MODEL_LOG" > "$current"
+  cmp -s "$OWNERSHIP_SNAPSHOT/protected-logs.sha256" "$current"
+}
+
+restore_phase_logs() {
+  local backup="$OWNERSHIP_SNAPSHOT/protected-logs" saved="" rel=""
+  [ -d "$backup" ] || return 0
+  if [ -n "$ACTIVE_MODEL_LOG" ] && [ -f "$ACTIVE_MODEL_LOG" ]; then
+    saved="$OWNERSHIP_SNAPSHOT/active-model.log"
+    cp -a -- "$ACTIVE_MODEL_LOG" "$saved"
+    rel="${ACTIVE_MODEL_LOG#"$ORCH/logs/"}"
+  fi
+  rm -rf -- "$ORCH/logs"
+  mkdir -p "$ORCH/logs"
+  cp -a "$backup/." "$ORCH/logs/"
+  if [ -n "$saved" ]; then
+    mkdir -p "$(dirname "$ACTIVE_MODEL_LOG")"
+    cp -a -- "$saved" "$ACTIVE_MODEL_LOG"
+  fi
 }
 
 snapshot_worktree() {
@@ -278,13 +350,19 @@ snapshot_worktree() {
   OWNERSHIP_SNAPSHOT="$(mktemp -d /tmp/harness-model-baseline.XXXXXX)"
   mkdir -p "$OWNERSHIP_SNAPSHOT/files"
   OWNERSHIP_BEFORE=()
+  OWNERSHIP_ARTIFACT_BEFORE=()
+  OWNERSHIP_REMOVE=()
   while IFS= read -r -d '' path; do
     OWNERSHIP_BEFORE["$path"]="$(path_fingerprint "$path")"
     if [ -e "$path" ] || [ -L "$path" ]; then
       cp -a --parents -- "$path" "$OWNERSHIP_SNAPSHOT/files"
     fi
   done < <(changed_paths)
-  for path in orchestrator/config.env toolchain.json; do
+  while IFS= read -r -d '' path; do
+    artifact_path_allowed "$path" || continue
+    OWNERSHIP_ARTIFACT_BEFORE["$path"]=1
+  done < <(all_untracked_paths)
+  for path in orchestrator/config.env orchestrator/secrets.env toolchain.json; do
     [ -e "$path" ] || [ -L "$path" ] || continue
     if [ -z "${OWNERSHIP_BEFORE[$path]+set}" ]; then
       OWNERSHIP_BEFORE["$path"]="$(path_fingerprint "$path")"
@@ -296,6 +374,14 @@ snapshot_worktree() {
 restore_worktree() {
   local base="$1" path saved
   rollback_attempt "$base"
+  for path in "${OWNERSHIP_REMOVE[@]}"; do
+    [ -n "$path" ] || continue
+    rm -f -- "$path"
+  done
+  while IFS= read -r -d '' path; do
+    artifact_path_allowed "$path" || continue
+    [ -n "${OWNERSHIP_ARTIFACT_BEFORE[$path]+set}" ] || rm -f -- "$path"
+  done < <(all_untracked_paths)
   for path in "${!OWNERSHIP_BEFORE[@]}"; do
     saved="$OWNERSHIP_SNAPSHOT/files/$path"
     if [ -e "$saved" ] || [ -L "$saved" ]; then
@@ -305,12 +391,16 @@ restore_worktree() {
       rm -f -- "$path"
     fi
   done
+  restore_phase_logs
 }
 
 clear_worktree_snapshot() {
   [ -z "$OWNERSHIP_SNAPSHOT" ] || rm -rf -- "$OWNERSHIP_SNAPSHOT"
   OWNERSHIP_SNAPSHOT=""
+  ACTIVE_MODEL_LOG=""
   OWNERSHIP_BEFORE=()
+  OWNERSHIP_ARTIFACT_BEFORE=()
+  OWNERSHIP_REMOVE=()
 }
 
 path_allowed() {
@@ -339,7 +429,7 @@ path_allowed() {
 }
 
 ownership_check() {
-  local role="$1" phase="$2" ms="$3" base="$4" config_hash="$5"
+  local role="$1" phase="$2" ms="$3" round="$4" base="$5" config_hash="$6"
   local path before now
   declare -A candidates=()
   OWNERSHIP_BAD=""
@@ -353,6 +443,11 @@ ownership_check() {
     restore_worktree "$base"
     return 1
   fi
+  if ! phase_logs_intact; then
+    OWNERSHIP_BAD="orchestrator/logs/** (Hash-Manifest)"
+    restore_worktree "$base"
+    return 1
+  fi
 
   for path in "${!OWNERSHIP_BEFORE[@]}"; do candidates["$path"]=1; done
   while IFS= read -r -d '' path; do candidates["$path"]=1; done < <(changed_paths)
@@ -362,6 +457,7 @@ ownership_check() {
     [ "$before" != __clean__ ] && [ "$before" = "$now" ] && continue
     if ! path_allowed "$role" "$phase" "$ms" "$path"; then
       OWNERSHIP_BAD="${OWNERSHIP_BAD}${OWNERSHIP_BAD:+ }$path"
+      [ "$before" != __clean__ ] || OWNERSHIP_REMOVE+=("$path")
     fi
   done
 
@@ -464,7 +560,7 @@ run_model() {
       fatal "$role/$phase rc=$rc; siehe $log_file"
     fi
 
-    if ownership_check "$role" "$phase" "$ms" "$base" "$config_hash"; then
+    if ownership_check "$role" "$phase" "$ms" "$round" "$base" "$config_hash"; then
       break
     fi
     if [ "$territory_retry" = 0 ]; then
@@ -479,13 +575,22 @@ run_model() {
 
 commit_phase() {
   local ms="$1" phase="$2" message="$3"
+  local diff_rc
   CURRENT_MS="$ms"
   CURRENT_PHASE="$phase"
   mkdir -p "$ORCH/state/$ms"
-  printf '%s\n' "$phase" > "$ORCH/state/$ms/current-phase"
+  printf '%s\n' "$phase" > "$ORCH/state/$ms/current-phase" \
+    || fatal "Phasenstatus kann nicht geschrieben werden: $ms/$phase"
   refresh_status
-  git add -A
-  git diff --cached --quiet || git commit -qm "$message"
+  git add -A -- . ':(exclude)orchestrator/.lock' ':(exclude)orchestrator/.lock/**' \
+    || fatal "git add für Phase $ms/$phase fehlgeschlagen."
+  if git diff --cached --quiet; then
+    :
+  else
+    diff_rc=$?
+    [ "$diff_rc" = 1 ] || fatal "Index-Prüfung für Phase $ms/$phase fehlgeschlagen (rc=$diff_rc)."
+    git commit -qm "$message" || fatal "Phasen-Commit fehlgeschlagen: $message"
+  fi
   PHASE_COUNT=$((PHASE_COUNT+1))
   if [ "$PHASE_COUNT" -ge "$PHASES_PER_RUN" ]; then
     HALT_REQUESTED=1
@@ -559,7 +664,7 @@ ensure_project_assets() {
 }
 
 park() {
-  local ms="$1" reason="$2"
+  local ms="$1" reason="$2" diff_rc
   CURRENT_MS="$ms"; CURRENT_PHASE=parked
   mkdir -p "$ORCH/state/$ms" "$ORCH/handoff/$ms"
   printf '%s\n' "$reason" > "$ORCH/state/$ms/parked"
@@ -575,8 +680,15 @@ park() {
   } > "$ORCH/ESCALATION-$ms.md"
   cp "$ORCH/ESCALATION-$ms.md" "$ORCH/ESCALATION.md"
   refresh_status "$reason" 3 true
-  git add -A
-  git diff --cached --quiet || git commit -qm "orch($ms): park milestone"
+  git add -A -- . ':(exclude)orchestrator/.lock' ':(exclude)orchestrator/.lock/**' \
+    || fatal "git add beim Parken von $ms fehlgeschlagen."
+  if git diff --cached --quiet; then
+    :
+  else
+    diff_rc=$?
+    [ "$diff_rc" = 1 ] || fatal "Index-Prüfung beim Parken von $ms fehlgeschlagen (rc=$diff_rc)."
+    git commit -qm "orch($ms): park milestone" || fatal "Park-Commit für $ms fehlgeschlagen."
+  fi
   notify_event NEEDS_HUMAN "$ms: $reason"
   notify_event PARKED "$ms: $reason"
   log "PARKED $ms: $reason — Lauf prüft weitere freie Meilensteine"

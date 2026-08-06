@@ -1,0 +1,18 @@
+# Explicit untracked build/runtime artifacts excluded from model territory diffs.
+# One extended regular expression per line; paths are repository-relative.
+(^|/)node_modules(/|$)
+(^|/)dist(/|$)
+(^|/)build(/|$)
+(^|/)coverage(/|$)
+(^|/)reports(/|$)
+(^|/)artifacts(/|$)
+(^|/)playwright-report(/|$)
+(^|/)test-results(/|$)
+(^|/)\.stryker-tmp(/|$)
+(^|/)\.pnpm-store(/|$)
+(^|/)\.venv(/|$)
+(^|/)venv(/|$)
+(^|/)\.direnv(/|$)
+(^|/)renv/library(/|$)
+(^|/)__pycache__(/|$)
+\.pyc$

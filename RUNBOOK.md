@@ -30,8 +30,13 @@ Die letzte `FATAL`-Zeile in `orchestrator/logs/orchestrate.log`,
 - wiederholter Transport- oder Territoriumsfehler,
 - Doppelstart/aktiver Lock.
 
-Ein verwaister Lock wird automatisch erkannt. Einen aktiven Lock nie
-entfernen; zuerst die dort genannte PID prüfen.
+Ein verwaister Lock, der nur eine tote `pid` enthält, wird automatisch und
+atomar übernommen. Enthält `orchestrator/.lock/` dagegen fremde Dateien,
+bricht der Start absichtlich ab: zuerst die gegebenenfalls eingetragene PID
+mit `kill -0 <PID>` prüfen, dann ausschließlich dieses Lock-Verzeichnis
+gezielt entfernen. Einen Lock mit lebender PID niemals verändern. Ein
+abgewiesener Doppelstart schreibt weder Heartbeat noch Notify-Ereignis; der
+laufende Orchestrator bleibt die einzige Statusquelle.
 
 ## STOP
 
