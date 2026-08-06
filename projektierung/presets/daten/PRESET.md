@@ -17,6 +17,15 @@ Rohdaten werden nicht ins Repo kopiert, sofern Lizenz/Größe das verbieten.
 Stattdessen stehen Quelle, Pin/Hash und reproduzierbarer Beschaffungsweg in
 Manifesten. Fehlende Daten brechen benannt ab.
 
+Fertige Konfigurationszeilen für ein Layout mit `pipeline/**`:
+
+```sh
+BUILDER_EXTRA_PATHS_REGEX='^pipeline/'
+REVIEWER_EXTRA_PATHS_REGEX='^schemas/'
+QA_EXTRA_PATHS_REGEX='^(tests/e2e/|tests/fuzz/)'
+REBUILD_PATHS='pipeline tools tests/unit tests/properties'
+```
+
 ## Gates
 
 - `schema`: Eingaben, Zwischenstände und Exporte validieren.

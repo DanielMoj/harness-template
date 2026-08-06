@@ -1,5 +1,7 @@
 # Plan A — Harness-Template („Werkbank")
 
+> Template-interne Konstruktionsunterlage; Zielprojekte dürfen `docs/template/` löschen.
+
 Stand 19.07.2026. Quellen: Demiurg-Repo (HEAD 7f12c50, M6 in Rework r4),
 Autonomie-Patch v2 vom 17.07., Betreiber-Blöcke vom 17.07. (venv weg,
 QA-Schalter, Budget 8, Probe-strict, tmux-Start).
@@ -45,7 +47,8 @@ harness-template/
     handoff/SCHEMA.md        # Patch-Fassung: ref-Pflicht, [INFRA]/[QA-PENDING]
     LESSONS.md               # leer, nur Kopf + Deckel-Hinweis (16 kB)
     mcp/server.*             # generischer Read-only-Server (A2, letzter Punkt)
-  docs/                      # leer; 00-vision.md.template als Ausfüllhilfe
+  docs/                      # projektleer; 00-vision.md.template als Ausfüllhilfe
+    template/                # interne Bau-/Abnahmenachweise; im Zielprojekt löschbar
   reference/
     anchors/                 # normative Referenzwerte samt Beleg (A3.6)
   projektierung/
@@ -125,7 +128,9 @@ als Vorwahl — 0 phasenweise mit Halt, 1 ein Meilenstein je Lauf,
 2 autonom mit Leiter (Default), 3 Nachtlauf per Timer (der Lock
 macht ihn gefahrlos). Die Stufe setzt nur Defaults für
 `MAX_MS_PER_RUN`, QA, Leiter und Notify und bleibt einzeln
-überstimmbar.
+überstimmbar. Geheimnisse stehen nie in `config.env`, sondern ausschließlich
+in der unversionierten Datei `orchestrator/secrets.env`; Modellphasen erhalten
+nur die dokumentierte Umgebungs-Allowlist.
 
 AGENTS.md zweiteilen. Generischer Block: die Territorienkarte aus
 docs/12 §1 — Builder schreibt src, tools, tests/unit, PROGRESS.md
@@ -211,7 +216,8 @@ API-Call, JSON-Verdict auf Exit-Code gemappt), `zitate.sh`
 
 ### A3.3 Logs
 
-`<MS>-<phase>-r<runde>-<zeitstempel>.log` plus gleichnamige
+`<MS>-<phase>-r<runde>-a<versuch>-<zeitstempel>.log` plus ein
+phasenbezogenes
 `-prompt.md`; `orchestrate.log` als Metaspur; Verdikt-Logs (Review,
 QA, Acceptance) klein halten, Transkripte ungekürzt lassen.
 
@@ -323,7 +329,8 @@ gegen das Schema. Idempotent: zweiter Aufruf repariert statt doppelt.
 
 ## A5 Checkliste „Neues Projekt"
 
-1. Template klonen, Slug vergeben.
+1. Template klonen, Slug vergeben; den rein template-internen Ordner
+   `docs/template/` im Zielprojekt löschen.
 2. Projektierung fahren (A7): Destillat gegen die Intake-Checkliste
    prüfen, dann per PROJEKTIERUNG.md die docs/, milestones.json,
    Gate-Liste und den AGENTS-Projektblock erzeugen lassen —
@@ -547,7 +554,7 @@ A3.7.
 ## A10 Praktischer Bauweg — Kickoff heute
 
 1. Leeres Repo `harness-template` anlegen (GitHub, privat reicht).
-   Diesen Plan als `docs/BAUPLAN.md` hineinlegen, die
+   Diesen Plan als `docs/template/BAUPLAN.md` hineinlegen, die
    SYSTEM-UEBERSICHT als README-Grundlage.
 2. Daneben ein read-only-Checkout von Demiurg (`../demiurg`) als
    Extraktionsquelle — gebaut wird ausdrücklich nicht im laufenden
@@ -556,7 +563,7 @@ A3.7.
 3. Kickoff-Prompt für diese Session:
 
 ```
-Baue dieses Repo zum harness-template nach docs/BAUPLAN.md aus.
+Baue dieses Repo zum harness-template nach docs/template/BAUPLAN.md aus.
 Quellen read-only: ../demiurg und dort docs/12-autonomer-bau.md.
 Arbeitspakete und Reihenfolge: BAUPLAN A8 Schritt 2; das
 Vollinventar A9 ist deine Prüfliste. Demiurg-Dateien kopieren und

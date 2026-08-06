@@ -16,6 +16,15 @@ Der AGENTS-Projektblock gibt `kapitel/**` als zusätzliches
 Builder-Territorium frei und setzt denselben Pfad in
 `BUILDER_EXTRA_PATHS_REGEX`/`REBUILD_PATHS`.
 
+Fertige Konfigurationszeilen:
+
+```sh
+BUILDER_EXTRA_PATHS_REGEX='^kapitel/'
+REVIEWER_EXTRA_PATHS_REGEX='^(stilbibel\.md|figurenbibel\.md|weltbibel\.md|quellen/)'
+QA_EXTRA_PATHS_REGEX='^(tests/e2e/|tests/fuzz/)'
+REBUILD_PATHS='kapitel tools tests/unit tests/properties'
+```
+
 ## Build
 
 „Build“ bedeutet deterministischer Manuskript-Render in das Zielmedium plus

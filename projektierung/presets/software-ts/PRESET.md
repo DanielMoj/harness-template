@@ -29,6 +29,14 @@ nicht geschätzt.
 sichtbarem Output, `assets` bei gebündelten Daten, `golden-adr` bei Golden-
 Artefakten. Jedes Gate braucht ein tragendes Kriterium.
 
+Die Architekturkonfiguration ist Reviewer-Territorium und wird über den
+allgemeinen Hook freigegeben:
+
+```sh
+REVIEWER_EXTRA_PATHS_REGEX='^(\.dependency-cruiser\..*|dependency-cruiser\..*)$'
+QA_EXTRA_PATHS_REGEX='^(tests/e2e/|tests/fuzz/)'
+```
+
 ## M0
 
 Manifest und Lockfile, strikte Compiler-/Lint-Konfiguration, leere

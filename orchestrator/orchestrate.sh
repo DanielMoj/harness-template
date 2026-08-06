@@ -477,10 +477,8 @@ path_allowed() {
     reviewer:10-acceptance:tests/acceptance/*|reviewer:10-acceptance:reference/anchors/*|reviewer:10-acceptance:orchestrator/handoff/"$ms"/*) return 0 ;;
     builder:20-plan:orchestrator/handoff/"$ms"/*) return 0 ;;
     reviewer:30-plan-review:orchestrator/handoff/"$ms"/*|reviewer:30-plan-review:contracts/PROTOCOLS.md|reviewer:30-plan-review:IMPLEMENTATION-RULES.md|reviewer:30-plan-review:docs/decisions/*) return 0 ;;
-    reviewer:30-plan-review:.dependency-cruiser.*|reviewer:30-plan-review:dependency-cruiser.*) return 0 ;;
     qa:45-qa:tests/e2e/*|qa:45-qa:tests/fuzz/*|qa:45-qa:orchestrator/handoff/"$ms"/QA.md|qa:45-qa:BACKLOG.md) return 0 ;;
     reviewer:50-code-review:orchestrator/handoff/"$ms"/*|reviewer:50-code-review:tests/acceptance/*|reviewer:50-code-review:reference/anchors/*|reviewer:50-code-review:BACKLOG.md|reviewer:50-code-review:IMPLEMENTATION-RULES.md|reviewer:50-code-review:contracts/PROTOCOLS.md|reviewer:50-code-review:docs/decisions/*) return 0 ;;
-    reviewer:50-code-review:.dependency-cruiser.*|reviewer:50-code-review:dependency-cruiser.*) return 0 ;;
     reviewer:70-arbiter:orchestrator/handoff/"$ms"/*|reviewer:70-arbiter:docs/decisions/*) return 0 ;;
   esac
 
@@ -492,6 +490,14 @@ path_allowed() {
     if [ -n "${BUILDER_EXTRA_PATHS_REGEX:-}" ] && grep -Eq -- "$BUILDER_EXTRA_PATHS_REGEX" <<<"$path"; then
       return 0
     fi
+  fi
+  if [ "$role" = reviewer ] && [ -n "${REVIEWER_EXTRA_PATHS_REGEX:-}" ] \
+      && grep -Eq -- "$REVIEWER_EXTRA_PATHS_REGEX" <<<"$path"; then
+    return 0
+  fi
+  if [ "$role" = qa ] && [ -n "${QA_EXTRA_PATHS_REGEX:-}" ] \
+      && grep -Eq -- "$QA_EXTRA_PATHS_REGEX" <<<"$path"; then
+    return 0
   fi
   return 1
 }

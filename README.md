@@ -34,6 +34,8 @@ Danach:
   maschinelle Sicht desselben Zustands.
 - `projektierung/`: Verfahren vom Destillat zu Specs, Meilensteinen, Gates
   und Projektblock.
+- `docs/template/`: interne Bau-, Abnahme- und Rework-Nachweise des Templates;
+  neu angelegte Zielprojekte dürfen diesen gesamten Ordner löschen.
 - `RUNBOOK.md`: Betreiber-Handgriffe.
 
 ## MCP und Tunnel
@@ -42,6 +44,11 @@ Danach:
 Umgebung außerhalb des Repos ein und startet ihn in `tmux`. Quick Tunnel ist
 der Nullkonfigurationsweg. Ein benannter Cloudflare-Tunnel wird empfohlen:
 stabile Hostadresse plus zufälliger, nicht erratbarer MCP-Pfad.
+
+Tunnel-Token und API-Keys liegen ausschließlich in der unversionierten Datei
+`orchestrator/secrets.env` (Modus 600). Modellphasen sehen nur
+`PROMPT_FILE`, `PATH`, `HOME`, `LANG` und explizit je Rolle freigegebene,
+nicht geheime Variablen.
 
 Der Connector ist lesend (`lies`, `liste`, strikte Befehls-Allowlist). Der
 einzige Schreibpfad ist die gedeckelte, kuratierte
@@ -53,4 +60,5 @@ einzige Schreibpfad ist die gedeckelte, kuratierte
 - 2: FATAL/PREFLIGHT-/Infrastrukturabbruch.
 - 3: Lauf beendet, mindestens ein Meilenstein ist geparkt.
 
-Die normative Bau- und Abnahmebeschreibung steht in `docs/BAUPLAN.md`.
+Die normative Bau- und Abnahmebeschreibung des Templates steht in
+`docs/template/BAUPLAN.md`.
