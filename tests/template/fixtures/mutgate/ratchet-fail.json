@@ -1,0 +1,12 @@
+{
+  "files": {
+    "src/core.js": {
+      "mutants": [
+        {"status": "Killed", "mutatorName": "ArithmeticOperator", "location": {"start": {"line": 1}}},
+        {"status": "Survived", "mutatorName": "BooleanLiteral", "location": {"start": {"line": 2}}},
+        {"status": "NoCoverage", "mutatorName": "ConditionalExpression", "location": {"start": {"line": 3}}},
+        {"status": "Survived", "mutatorName": "StringLiteral", "location": {"start": {"line": 4}}}
+      ]
+    }
+  }
+}

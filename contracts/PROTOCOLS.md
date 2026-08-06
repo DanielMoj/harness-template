@@ -97,9 +97,9 @@ mit mindestens einem geparkten Meilenstein.
 
 ## 6. Logs und Provenienz
 
-Jeder Modellaufruf erzeugt
-`<MS>-<phase>-r<runde>-<zeitstempel>.log` und die gleichnamige
-`-prompt.md`. `orchestrate.log` ist die Metaspur. Prompts werden über die
+Jeder Modellversuch erzeugt eindeutig
+`<MS>-<phase>-r<runde>-a<versuch>-<zeitstempel>.log`; je Phase entsteht
+zusätzlich ein Promptarchiv. `orchestrate.log` ist die Metaspur. Prompts werden über die
 Umgebungsvariable `PROMPT_FILE` übergeben; Resume-Flags sind verboten.
 `gates.json` trägt Basis-SHA, aktuellen SHA und Toolversionen.
 

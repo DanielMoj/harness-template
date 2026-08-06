@@ -1,10 +1,14 @@
 # T‑5 — Vollinventar und Fundstellen
 
-Diese Tabelle ist der Nachweisabgleich gegen A9. Die Spalte „Quelle“ benennt
-nur die Extraktionsprovenienz; kein Laufzeitcode öffnet oder referenziert ein
-Quell-Repo. `tests/template/test-t5-inventory.py` prüft jede belegte
-Fundstelle als wörtlichen Suchanker und jede Weglassung auf eine nichtleere
-Begründung.
+> Template-interne Prüfliste; Zielprojekte dürfen den gesamten Ordner löschen.
+
+Diese Tabelle ist der Nachweisabgleich gegen A9 und die unabhängige Sollliste
+`docs/template/T5-SOLL.md`. Die Spalte „Quelle“ benennt nur die
+Extraktionsprovenienz; kein Laufzeitcode öffnet oder referenziert ein
+Quell-Repo. `tests/template/test-t5-inventory.py` verlangt die exakte
+Sollmenge. Statische Belege werden an ihrer Fundstelle validiert; die sechs
+adversariell widerlegten Sicherungen benötigen einen ausgeführten
+Verhaltensnachweis.
 
 | ID | Quelle / Funktion | Status | Fundstelle | Suchanker oder Begründung |
 |---|---|---|---|---|
@@ -55,7 +59,7 @@ Begründung.
 | T5-D12-28 | Gate trace und Kriterien-Volltext | belegt | `orchestrator/gates.d/70-trace.sh.example` | `alle Kriterien sind wörtlich und beidseitig verknüpft` |
 | T5-D12-29 | Gate bench | belegt | `orchestrator/gates.d/80-bench.sh.example` | `gate_run_configured BENCH_CMD bench` |
 | T5-D12-30 | Gate e2e | belegt | `orchestrator/gates.d/81-e2e.sh.example` | `gate_run_configured E2E_CMD e2e` |
-| T5-D12-31 | Gate territory | belegt | `orchestrator/gates.d/82-territory.sh.example` | `territory: letzter Diff sauber` |
+| T5-D12-31 | Gate territory | verhalten | `tests/template/test-t7-integrity.sh` | `territory-enforcement` |
 | T5-D12-32 | Gate assets mit Manifestprüfung | belegt | `orchestrator/gates.d/83-assets.sh.example` | `gate_run_configured ASSETS_CMD assets` |
 | T5-D12-33 | Gate shots und sichtbare Artefakte | belegt | `orchestrator/gates.d/84-shots.sh.example` | `gate_run_configured SHOTS_CMD shots` |
 | T5-D12-34 | Gate mutgate | belegt | `orchestrator/gates.d/86-mutgate.sh.example` | `Mutation-Ratchet v2` |
@@ -64,12 +68,12 @@ Begründung.
 | T5-D12-37 | Lineare Historie und unveränderliche Tags | belegt | `orchestrator/orchestrate.sh` | `Tags werden nie verschoben.` |
 | T5-D12-38 | Sauberer Baum vor Lauf | belegt | `orchestrator/orchestrate.sh` | `Arbeitsbaum vor Lauf nicht sauber` |
 | T5-D12-39 | reference und Anker sind Builder-read-only | belegt | `AGENTS.md` | `reference/anchors/**` |
-| T5-D12-40 | Gefährliche Bypass-Flags verboten | belegt | `orchestrator/orchestrate.sh` | `gefährlicher Bypass-/Full-Access-Modus` |
-| T5-D12-41 | Reale Sandbox-/Permission-Modi werden geprüft | belegt | `orchestrator/orchestrate.sh` | `validate_role_cli() {` |
+| T5-D12-40 | Gefährliche Bypass-Flags verboten | verhalten | `tests/template/test-t7-integrity.sh` | `flag-ban` |
+| T5-D12-41 | Reale Sandbox-/Permission-Modi werden geprüft | verhalten | `tests/template/test-t7-integrity.sh` | `sandbox-guard` |
 | T5-D12-42 | Phasen-Timeout | belegt | `orchestrator/orchestrate.sh` | `timeout "$PHASE_TIMEOUT"` |
 | T5-D12-43 | Runden- und Meilensteinlimits | belegt | `config.env.example` | `MAX_MS_PER_RUN=` |
 | T5-D12-44 | STOP zwischen Phasen | belegt | `orchestrator/orchestrate.sh` | `STOP-Datei gefunden` |
-| T5-D12-45 | Vollständige Modelllogs und Promptarchiv | belegt | `contracts/PROTOCOLS.md` | `Jeder Modellaufruf erzeugt` |
+| T5-D12-45 | Vollständige Modelllogs und Promptarchiv | belegt | `contracts/PROTOCOLS.md` | `Jeder Modellversuch erzeugt eindeutig` |
 | T5-D12-46 | PREFLIGHT prüft echte CLI-Hilfe und Flags | belegt | `orchestrator/orchestrate.sh` | `reales --help-Kommando fehlgeschlagen` |
 | T5-D12-47 | Frische Sessions und Resume-Verbot | belegt | `orchestrator/orchestrate.sh` | `Resume-/Session-Flags sind verboten` |
 | T5-D12-48 | Gedächtnis liegt in versionierten Dateien | belegt | `contracts/PROTOCOLS.md` | `Jeder Meilenstein läuft in frischen Sessions` |
@@ -92,18 +96,18 @@ Begründung.
 | T5-PATCH-01 | Patch v2: Transport-Retry für alle Rollen | belegt | `orchestrator/orchestrate.sh` | `transport_error() {` |
 | T5-PATCH-02 | Patch v2: exponentielles Backoff ohne Rundenverbrauch | belegt | `orchestrator/orchestrate.sh` | `keine Runde verbraucht` |
 | T5-PATCH-03 | Patch v2: genau ein Territoriums-Retry | belegt | `orchestrator/orchestrate.sh` | `genau ein Retry mit Hinweis` |
-| T5-PATCH-04 | Patch v2: Lock und verwaiste Locks | belegt | `orchestrator/orchestrate.sh` | `verwaister Lock` |
+| T5-PATCH-04 | Patch v2: Lock und verwaiste Locks | verhalten | `tests/template/test-t4-ops.sh` | `lock-orphan` |
 | T5-PATCH-05 | Patch v2: Notify-Ereignisse | belegt | `orchestrator/notify.sh` | `case "$EVENT" in` |
 | T5-PATCH-06 | Patch v2: Rebuild ab konfigurierter Runde | belegt | `orchestrator/orchestrate.sh` | `rebuild_reset() {` |
 | T5-PATCH-07 | Patch v2: Arbiter mit einmaliger Direktive | belegt | `orchestrator/orchestrate.sh` | `arbiter-granted` |
 | T5-PATCH-08 | Patch v2: Park und Continue mit Exit 3 | belegt | `orchestrator/orchestrate.sh` | `Lauf prüft weitere freie Meilensteine` |
 | T5-PATCH-09 | Patch v2: Meilenstein-Graph und Vorgänger-Fallback | belegt | `orchestrator/orchestrate.sh` | `deps_met() {` |
-| T5-PATCH-10 | Patch v2: inaktive Pflicht-QA parkt ohne Runde | belegt | `orchestrator/orchestrate.sh` | `keine Rework-Runde wird verbraucht` |
+| T5-PATCH-10 | Patch v2: inaktive Pflicht-QA parkt ohne Runde | verhalten | `tests/template/test-t6-qa-autonomy.sh` | `qa-park` |
 | T5-PATCH-11 | Patch v2: Findings mit ref und INFRA/QA-PENDING | belegt | `orchestrator/handoff/SCHEMA.md` | `[INFRA]` |
 | T5-PATCH-12 | Patch v2: Mutgate-Tod vor Mutation ist error | belegt | `orchestrator/gates.d/86-mutgate.sh.example` | `Werkzeug starb vor der Mutation` |
 | T5-PATCH-13 | Patch v2: Mutation-Ratchet, Floor und Toleranz | belegt | `orchestrator/gates.d/86-mutgate.sh.example` | `MUT_RATCHET_TOL` |
 | T5-PATCH-14 | Patch v2: Äquivalenz nur nach Reviewer-Approval | belegt | `orchestrator/gates.d/86-mutgate.sh.example` | `MUT-EQUIV-APPROVED.json` |
-| T5-PATCH-15 | Patch v2: LESSONS-Lesepfad und CONFIG-Provenienz | belegt | `orchestrator/orchestrate.sh` | `CONFIG: AUTONOMY=` |
+| T5-PATCH-15 | Patch v2: LESSONS-Lesepfad und CONFIG-Provenienz | belegt | `tests/template/test-t5-inventory.py` | `T5-PATCH-15` |
 | T5-D14-01 | docs/14 V0: reproduzierbarer Zufall und Replay | belegt | `IMPLEMENTATION-RULES.md` | `Zufall ist injiziert, geseedet und reproduzierbar` |
 | T5-D14-02 | docs/14 V1: projektspezifische IDB-Logsenke | bewusst weggelassen | — | Eine Browser-IDB-Senke ist Demiurg-Produktcode, keine Harness-Mechanik; das Projektierungsverfahren muss sie bei entsprechender Spec als Nutzlast einplanen. |
 | T5-D14-03 | docs/14 V2: Invarianten und Identitäten | belegt | `IMPLEMENTATION-RULES.md` | `Kerninvarianten scheitern früh` |
@@ -119,11 +123,12 @@ Begründung.
 | T5-NEW-06 | BAUPLAN neu: Umgebungen außerhalb des Arbeitsbaums | belegt | `bootstrap.sh` | `MCP_ENV_DIR muss außerhalb des Repos liegen` |
 | T5-NEW-07 | BAUPLAN neu: Projektierung fragt Lücken statt zu raten | belegt | `projektierung/PROJEKTIERUNG.md` | `Lücken → gesammelte Rückfragen, STOPP` |
 | T5-NEW-08 | BAUPLAN neu: Typ-Presets und echtes Referenzbeispiel | belegt | `projektierung/beispiel/README.md` | `Messlatte` |
-| T5-NEW-09 | BAUPLAN neu: generischer MCP-Connector aus Umgebungswerten | belegt | `orchestrator/mcp/server.py` | `os.environ.get("REPO_PATH"` |
+| T5-NEW-09 | BAUPLAN neu: generischer MCP-Connector aus Umgebungswerten | verhalten | `orchestrator/mcp/tests/test_allowlist.py` | `mcp-allowlist` |
 
 ## Ergebnisregel
 
-T‑5 ist nur bestanden, wenn das Prüfskript alle Tabellenzeilen parst, jeder
-`belegt`-Anker in der genannten Datei vorkommt, jede Weglassung begründet ist
-und alle Kategorien Mindestabdeckung besitzen. Die ausgeführte Ausgabe wird
-zusammen mit T‑1 bis T‑4 in `docs/ABNAHME.md` festgehalten.
+T‑5 ist nur bestanden, wenn das Prüfskript alle Soll-IDs exakt wiederfindet,
+jeder `belegt`-Anker trägt, jede Weglassung begründet ist und jeder
+`verhalten`-Schlüssel aus einem im selben Suitelauf erfolgreich ausgeführten
+Test stammt. Die Ausgabe wird mit der übrigen Suite in
+`docs/template/ABNAHME.md` festgehalten.

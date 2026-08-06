@@ -82,7 +82,7 @@ if [ -z "$ARG_REASON" ] && [ -n "$ARG_MS" ] && [ -f "$ORCH/state/$ARG_MS/reason"
 fi
 
 NEEDS_HUMAN="${STATUS_NEEDS_HUMAN:-false}"
-if [ "$ARG_PHASE" = parked ] || [ -n "$ARG_REASON" ] && [ -f "$ORCH/state/${ARG_MS:-_}/parked" ]; then
+if [ "$ARG_PHASE" = parked ] || { [ -n "$ARG_REASON" ] && [ -f "$ORCH/state/${ARG_MS:-_}/parked" ]; }; then
   NEEDS_HUMAN=true
 fi
 case "$NEEDS_HUMAN" in true|false) ;; *) NEEDS_HUMAN=false ;; esac

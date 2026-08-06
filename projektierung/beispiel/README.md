@@ -15,6 +15,10 @@ Das Beispiel zeigt Detailtiefe und Belegkette, nicht das aktuelle
 Template-Schema. Historische Manifeste dürfen etwa `deps` auslassen
 (Vorgänger-Fallback); neue Projektierungen müssen
 `{id,title,criteriaRef,deps,effort}` aus `SPEC-KONTRAKT.md` schreiben.
+Auch `M0/anchor.json` ist ein unveränderter historischer Beleg: Es verwendet
+`harvested`, einen Repo-Pfad als `source_url` und kein `tolerance`. Neue Anker
+müssen stattdessen den aktuellen Vertrag aus `reference/anchors/README.md`
+mit `retrieved`, echter Quellen-URL und Toleranz erfüllen.
 
 Kette:
 
