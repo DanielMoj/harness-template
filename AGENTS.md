@@ -6,6 +6,10 @@ deterministische Gates entscheiden über grün oder rot. Das gemeinsame
 Gedächtnis ist dateibasiert und folgt den Schemata in
 `contracts/PROTOCOLS.md` und `orchestrator/handoff/SCHEMA.md`.
 
+## Geltungsbereich
+
+Die Git-Verbote dieses Dokuments gelten für Modellrollen im laufenden Harness-Betrieb einer Projektinstanz. Beim Bau und bei der Wartung des Harness-Templates selbst handelt das ausführende Werkzeug als Betreiber-Werkzeug; dafür gelten die Vorgaben des jeweiligen Betreiber- oder Rework-Auftrags einschließlich ausdrücklich verlangter Commits und Pushes.
+
 ## Pflichtlektüre
 
 - Alle Rollen: diese Datei und `contracts/PROTOCOLS.md`.
