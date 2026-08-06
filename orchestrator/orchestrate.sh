@@ -62,7 +62,8 @@ REBUILD_ROUND="${REBUILD_ROUND:-4}"
 ARBITER_EXTRA_ROUNDS="${ARBITER_EXTRA_ROUNDS:-2}"
 RETRY_MAX="${RETRY_MAX:-2}"
 RETRY_SLEEP="${RETRY_SLEEP:-120}"
-QA_REQUIRED_FROM="${QA_REQUIRED_FROM:-M3}"
+GATE_ERROR_RETRIES="${GATE_ERROR_RETRIES:-2}"
+QA_REQUIRED_FROM="${QA_REQUIRED_FROM-M3}"
 QA_ENABLED="${QA_ENABLED:-$([ -n "${QA_CMD:-}" ] && echo 1 || echo 0)}"
 QA_PROBE_STRICT="${QA_PROBE_STRICT:-1}"
 QA_PROBE_RETRIES="${QA_PROBE_RETRIES:-3}"
@@ -151,7 +152,7 @@ validate_manifest() {
     all(.[];
       (.id|type=="string" and test("^[A-Za-z][A-Za-z0-9_-]*$")) and
       (.title|type=="string" and length>0) and
-      (.criteriaRef|type=="array" and length>0 and all(.[]; type=="string" and length>0)) and
+      (.criteriaRef|type=="array" and length>0 and all(.[]; type=="string" and test("^[A-Za-z0-9._-]+$"))) and
       ((has("deps")|not) or (.deps|type=="array" and all(.[]; type=="string"))) and
       (.effort=="low" or .effort=="high" or .effort=="max")
     ) and
@@ -184,15 +185,22 @@ validate_role_cli() {
   local role="$1" cmd="$2" help_cmd="$3" required="$4" safe_pattern="$5"
   [ -n "$cmd" ] || fatal "$role-CMD ist leer."
   [ -n "$help_cmd" ] || fatal "$role-HELP_CMD ist leer."
-  local help_out
+  local help_out expanded
   if ! help_out="$(bash -c "$help_cmd" 2>&1)"; then
     fatal "$role: reales --help-Kommando fehlgeschlagen: $help_cmd"
   fi
+  expand_role_cmd "$role" "$cmd"
+  expanded="$EXPANDED_ROLE_CMD"
+  if [ "$ROLE_GUARDS" = off ]; then
+    return 0
+  fi
+  [ -n "$required" ] || fatal "$role-REQUIRED_FLAGS ist leer; nur ROLE_GUARDS=off darf Rollenwächter abschalten."
+  [ -n "$safe_pattern" ] || fatal "$role-SAFE_MODE_PATTERN ist leer; nur ROLE_GUARDS=off darf Rollenwächter abschalten."
   local flag
   for flag in $required; do
     grep -Fq -- "$flag" <<<"$help_out" || fatal "$role: Flag '$flag' fehlt im echten --help."
   done
-  [ -z "$safe_pattern" ] || grep -Eq -- "$safe_pattern" <<<"$cmd" \
+  grep -Eq -- "$safe_pattern" <<<"$expanded" \
     || fatal "$role: konfigurierter Sandbox-/Permission-Modus fehlt."
 }
 
@@ -232,7 +240,22 @@ preflight() {
   require_uint RETRY_MAX "$RETRY_MAX"
   require_uint MAX_MS_PER_RUN "$MAX_MS_PER_RUN"
 
-  local all_cmds="${BUILDER_CMD:-} ${REVIEWER_CMD:-} ${QA_CMD:-}"
+  case "$ROLE_GUARDS" in on|off) ;; *) fatal "ROLE_GUARDS muss on oder off sein." ;; esac
+  if [ -n "$QA_REQUIRED_FROM" ]; then
+    jq -e --arg id "$QA_REQUIRED_FROM" 'any(.[]; .id==$id)' "$MILESTONES" >/dev/null \
+      || fatal "QA_REQUIRED_FROM ist keine Meilenstein-ID des Manifests: $QA_REQUIRED_FROM"
+  fi
+
+  local builder_expanded reviewer_expanded qa_expanded="" all_cmds
+  expand_role_cmd BUILDER "${BUILDER_CMD:-}"
+  builder_expanded="$EXPANDED_ROLE_CMD"
+  expand_role_cmd REVIEWER "${REVIEWER_CMD:-}"
+  reviewer_expanded="$EXPANDED_ROLE_CMD"
+  if [ "$QA_ENABLED" = 1 ]; then
+    expand_role_cmd QA "${QA_CMD:-}"
+    qa_expanded="$EXPANDED_ROLE_CMD"
+  fi
+  all_cmds="$builder_expanded $reviewer_expanded $qa_expanded"
   if grep -Eqi -- '--continue|--resume|--session([ =]|$)' <<<"$all_cmds"; then
     fatal "Resume-/Session-Flags sind verboten; jede Phase ist eine frische Session."
   fi
@@ -260,7 +283,7 @@ preflight() {
 
   CURRENT_PHASE=preflight
   refresh_status
-  log "CONFIG: AUTONOMY=$AUTONOMY_LEVEL PLAN<=$MAX_ROUNDS_PLAN REWORK<=$MAX_ROUNDS_REWORK REBUILD@r$REBUILD_ROUND ARBITER+$ARBITER_EXTRA_ROUNDS TIMEOUT=$PHASE_TIMEOUT RETRY=${RETRY_MAX}x/${RETRY_SLEEP}s MAX_MS=$MAX_MS_PER_RUN QA=$QA_ENABLED(ab $QA_REQUIRED_FROM) NOTIFY=$([ "$NOTIFY_ENABLED" = 1 ] && [ -n "${NOTIFY_URL:-}" ] && echo an || echo aus) BUILDER=${BUILDER_CMD%% *} REVIEWER=${REVIEWER_CMD%% *}"
+  log "CONFIG: AUTONOMY=$AUTONOMY_LEVEL PLAN<=$MAX_ROUNDS_PLAN REWORK<=$MAX_ROUNDS_REWORK REBUILD@r$REBUILD_ROUND ARBITER+$ARBITER_EXTRA_ROUNDS TIMEOUT=$PHASE_TIMEOUT RETRY=${RETRY_MAX}x/${RETRY_SLEEP}s GATE_ERROR_RETRIES=$GATE_ERROR_RETRIES MAX_MS=$MAX_MS_PER_RUN QA=$QA_ENABLED(ab ${QA_REQUIRED_FROM:-nie}) ROLE_GUARDS=$([ "$ROLE_GUARDS" = off ] && echo OFF || echo on) NOTIFY=$([ "$NOTIFY_ENABLED" = 1 ] && [ -n "${NOTIFY_URL:-}" ] && echo an || echo aus) BUILDER=${BUILDER_CMD%% *} REVIEWER=${REVIEWER_CMD%% *}"
 
   if [ "$QA_ENABLED" = 1 ] && [ "$QA_PROBE_STRICT" = 1 ]; then
     local attempt=1 probe_file probe_out rc
@@ -287,13 +310,15 @@ preflight() {
 
 render_prompt() {
   local prompt="$1" ms="$2" round="$3" dispute_phase="${4:-code}" criteria
-  criteria="$(jq -r --arg id "$ms" '.[] | select(.id==$id) | .criteriaRef | join(" ")' "$MILESTONES")"
+  criteria="$(jq -er --arg id "$ms" '.[] | select(.id==$id) | .criteriaRef | join(" ")' "$MILESTONES")" \
+    || return 1
   sed \
-    -e "s|{{MS}}|$ms|g" \
-    -e "s|{{ROUND}}|$round|g" \
-    -e "s|{{CRITERIA}}|$criteria|g" \
-    -e "s|{{DISPUTE_PHASE}}|$dispute_phase|g" \
-    "$ORCH/prompts/$prompt"
+    -e "s#{{MS}}#$ms#g" \
+    -e "s#{{ROUND}}#$round#g" \
+    -e "s#{{CRITERIA}}#$criteria#g" \
+    -e "s#{{DISPUTE_PHASE}}#$dispute_phase#g" \
+    "$ORCH/prompts/$prompt" \
+    || return 1
   printf '\n%s\n' "Git-Hinweis: Der Orchestrator committet nach der Territoriumsprüfung. Führe selbst keine Git-Kommandos aus."
 }
 

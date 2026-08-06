@@ -109,7 +109,8 @@ jq -n \
   --argjson parked "$PARKED" \
   --argjson last_events "$LAST_EVENTS" \
   --argjson exit "$EXIT_JSON" \
-  '{contract:1,project:$project,ts:$ts,milestone:{id:$ms,index:$index,total:$total},phase:$phase,round:$round,needs_human:$needs_human,reason:$reason,gates:$gates,parked:$parked,last_events:$last_events,exit:$exit}' \
+  --arg role_guards "${ROLE_GUARDS:-on}" \
+  '{contract:1,project:$project,ts:$ts,milestone:{id:$ms,index:$index,total:$total},phase:$phase,round:$round,needs_human:$needs_human,reason:$reason,gates:$gates,parked:$parked,last_events:$last_events,exit:$exit,role_guards:$role_guards}' \
   > "$SUMMARY_TMP"
 mv "$SUMMARY_TMP" "$ORCH/state/summary.json"
 

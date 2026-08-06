@@ -23,13 +23,25 @@ materialize_tree() {
   mkdir -p "$destination"
   (
     cd "$REPO_ROOT"
-    git ls-files -z | tar --null -T - -cf -
+    while IFS= read -r -d '' path; do
+      [ -e "$path" ] && printf '%s\0' "$path"
+    done < <(git ls-files -z)
+  ) | (
+    cd "$REPO_ROOT"
+    tar --null -T - -cf -
   ) | tar -xf - -C "$destination"
 
   # Beim ersten Lauf ist dieses Arbeitspaket noch nicht committed. Die
   # explizite Kopie macht denselben Test vor und nach seinem Commit moeglich.
-  mkdir -p "$destination/tests"
-  cp -a "$TEST_DIR" "$destination/tests/template"
+  mkdir -p "$destination/tests/template"
+  cp -a "$TEST_DIR/." "$destination/tests/template/"
+  mkdir -p "$destination/orchestrator"
+  cp "$REPO_ROOT/orchestrator/artifact-paths.allowlist" \
+    "$destination/orchestrator/artifact-paths.allowlist"
+  if [ -d "$REPO_ROOT/docs/template" ]; then
+    mkdir -p "$destination/docs"
+    cp -a "$REPO_ROOT/docs/template" "$destination/docs/template"
+  fi
 }
 
 init_fixture_repo() {
@@ -49,11 +61,19 @@ prepare_orchestrator_case() {
   local scenario="$1" destination="$2" config_fixture milestones_fixture
   case "$scenario" in
     T2)
-      config_fixture=config-t2.env
+      config_fixture=config-t2.conf
       milestones_fixture=milestones-t2.json
       ;;
     T3)
-      config_fixture=config-t3.env
+      config_fixture=config-t3.conf
+      milestones_fixture=milestones-t3.json
+      ;;
+    T6)
+      config_fixture=config-t6.conf
+      milestones_fixture=milestones-t6.json
+      ;;
+    TERROR)
+      config_fixture=config-terror.conf
       milestones_fixture=milestones-t3.json
       ;;
     *) echo "acceptance: unbekanntes Szenario $scenario" >&2; return 2 ;;
@@ -74,4 +94,10 @@ prepare_orchestrator_case() {
 require_file() {
   local path="$1"
   [ -f "$path" ] || { echo "acceptance: Datei fehlt: $path" >&2; return 1; }
+}
+
+record_behavior() {
+  local behavior="$1"
+  [ -n "${HARNESS_BEHAVIOR_RESULTS:-}" ] || return 0
+  printf '%s\n' "$behavior" >> "$HARNESS_BEHAVIOR_RESULTS"
 }
