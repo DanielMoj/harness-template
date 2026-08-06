@@ -32,6 +32,8 @@ set -e
   done
   git log --format=%s | grep -F 'orch(M0): gates r1 (rc=1)'
   git log --format=%s | grep -F 'orch(M0): builder 60-rework r2'
+  git log --format=%s | grep -F 'orch(M0): complete milestone'
+  test "$(git rev-list --count HEAD)" -gt 12
   test ! -e src/reviewer-territory-violation.txt
   test "$(git tag --list 'done/M*' | wc -l)" = 2
   jq -c '{contract,project,phase,milestone,gates,parked,exit}' orchestrator/state/summary.json

@@ -25,6 +25,10 @@ say() { printf '\n▶ %s\n' "$*"; }
 fatal() { echo "bootstrap: FATAL: $*" >&2; exit 2; }
 
 [ -d .git ] || fatal "kein Git-Checkout: $REPO_ROOT"
+[ -n "$(git config user.name 2>/dev/null || true)" ] \
+  || fatal "git user.name fehlt; mit 'git config user.name <Name>' setzen"
+[ -n "$(git config user.email 2>/dev/null || true)" ] \
+  || fatal "git user.email fehlt; mit 'git config user.email <Adresse>' setzen"
 
 missing_packages=()
 for spec in git:git tmux:tmux jq:jq curl:curl python3:python3; do

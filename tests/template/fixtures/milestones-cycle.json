@@ -1,0 +1,16 @@
+[
+  {
+    "id": "M0",
+    "title": "Cycle fixture zero",
+    "criteriaRef": ["K-M0-1"],
+    "deps": ["M1"],
+    "effort": "low"
+  },
+  {
+    "id": "M1",
+    "title": "Cycle fixture one",
+    "criteriaRef": ["K-M1-1"],
+    "deps": ["M0"],
+    "effort": "low"
+  }
+]

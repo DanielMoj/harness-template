@@ -159,6 +159,25 @@ validate_manifest() {
     ([.[] | .deps[]?] - [.[].id] | length==0) and
     all(.[]; (.id as $id | all(.deps[]?; . != $id)))
   ' "$MILESTONES" >/dev/null || fatal "Meilensteinmanifest verletzt contracts/PROTOCOLS.md §2."
+  jq -e '
+    . as $manifest
+    | def acyclic($id; $seen):
+        if ($seen | index($id)) != null then false
+        else all(($manifest[] | select(.id==$id) | .deps[]?); acyclic(.; $seen + [$id]))
+        end;
+      all(.[]; .id as $id | acyclic($id; []))
+  ' "$MILESTONES" >/dev/null || fatal "Meilensteinmanifest enthält einen deps-Zyklus."
+}
+
+expand_role_cmd() {
+  local role="$1" cmd="$2" expanded remainder
+  remainder="${cmd//\$\{PROMPT_FILE\}/}"
+  remainder="${remainder//\$PROMPT_FILE/}"
+  [[ "$remainder" != *'$'* ]] \
+    || fatal "$role-CMD enthält eine nicht erlaubte \$-Referenz; nur \$PROMPT_FILE ist zulässig."
+  expanded="${cmd//\$\{PROMPT_FILE\}/\/tmp\/harness-prompt.md}"
+  expanded="${expanded//\$PROMPT_FILE/\/tmp\/harness-prompt.md}"
+  EXPANDED_ROLE_CMD="$expanded"
 }
 
 validate_role_cli() {
@@ -177,11 +196,34 @@ validate_role_cli() {
     || fatal "$role: konfigurierter Sandbox-/Permission-Modus fehlt."
 }
 
+require_contract_paths() {
+  local path
+  for path in \
+    prompts/10-acceptance.md prompts/20-plan.md prompts/30-plan-review.md \
+    prompts/40-build.md prompts/45-qa.md prompts/50-code-review.md \
+    prompts/60-rework.md prompts/62-rebuild.md prompts/70-arbiter.md \
+    handoff/SCHEMA.md status.sh verifier.sh; do
+    [ -f "$ORCH/$path" ] || fatal "Vertragspfad fehlt: orchestrator/$path"
+  done
+  for path in gates.d state; do
+    [ -d "$ORCH/$path" ] || fatal "Vertragspfad fehlt: orchestrator/$path/"
+  done
+  [ -f "$REPO_ROOT/contracts/PROTOCOLS.md" ] || fatal "Vertragspfad fehlt: contracts/PROTOCOLS.md"
+  [ -d "$REPO_ROOT/reference/anchors" ] || fatal "Vertragspfad fehlt: reference/anchors/"
+  [ -f "$ARTIFACT_ALLOWLIST" ] || fatal "Vertragspfad fehlt: orchestrator/artifact-paths.allowlist"
+}
+
 preflight() {
   command -v git >/dev/null 2>&1 || fatal "git fehlt"
   command -v jq >/dev/null 2>&1 || fatal "jq fehlt"
   command -v bash >/dev/null 2>&1 || fatal "bash fehlt"
   validate_manifest
+  require_contract_paths
+
+  [ -n "$(git config user.name 2>/dev/null || true)" ] \
+    || fatal "git user.name fehlt; vor dem Lauf mit 'git config user.name <Name>' setzen."
+  [ -n "$(git config user.email 2>/dev/null || true)" ] \
+    || fatal "git user.email fehlt; vor dem Lauf mit 'git config user.email <Adresse>' setzen."
 
   require_uint PHASE_TIMEOUT "$PHASE_TIMEOUT"
   require_uint MAX_ROUNDS_PLAN "$MAX_ROUNDS_PLAN"
@@ -623,23 +665,24 @@ verdict() {
 phase_done() { [ -f "$ORCH/state/$1/$2.done" ]; }
 
 tag_once() {
-  local tag="$1" message="$2"
+  local tag="$1" message="$2" tagged head
   if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-    [ "$(git rev-list -n 1 "$tag")" = "$(git rev-parse HEAD)" ] \
+    tagged="$(git rev-list -n 1 "$tag")" || fatal "Tag-Ziel kann nicht gelesen werden: $tag"
+    head="$(git rev-parse HEAD)" || fatal "HEAD kann für Tag $tag nicht gelesen werden."
+    [ "$tagged" = "$head" ] \
       || fatal "Tag $tag existiert bereits auf einem anderen Commit; Tags werden nie verschoben."
     return 0
   fi
-  git tag -a "$tag" -m "$message"
-}
-
-milestone_number() {
-  sed -E 's/^[^0-9]*([0-9]+).*$/\1/' <<<"$1"
+  git tag -a "$tag" -m "$message" || fatal "Tag kann nicht angelegt werden: $tag"
 }
 
 qa_required() {
   local current required
-  current="$(milestone_number "$1")"
-  required="$(milestone_number "$QA_REQUIRED_FROM")"
+  [ -n "$QA_REQUIRED_FROM" ] || return 1
+  current="$(jq -er --arg id "$1" 'to_entries[] | select(.value.id==$id) | .key' "$MILESTONES")" \
+    || fatal "Meilenstein-ID für QA-Vergleich fehlt: $1"
+  required="$(jq -er --arg id "$QA_REQUIRED_FROM" 'to_entries[] | select(.value.id==$id) | .key' "$MILESTONES")" \
+    || fatal "QA_REQUIRED_FROM ist keine Meilenstein-ID: $QA_REQUIRED_FROM"
   [ "$current" -ge "$required" ]
 }
 
@@ -740,9 +783,10 @@ rebuild_reset() {
   log "REBUILD $ms: Builder-Territorium zurück auf plan/$ms"
   for path in $REBUILD_PATHS; do
     case "$path" in /*|*..*) fatal "unsicherer REBUILD_PATHS-Eintrag: $path" ;; esac
-    git rm -rq --ignore-unmatch -- "$path" >/dev/null 2>&1 || true
+    git rm -rq --ignore-unmatch -- "$path" >/dev/null 2>&1 \
+      || fatal "Rebuild kann Builder-Pfad nicht entfernen: $path"
     if git cat-file -e "plan/$ms:$path" 2>/dev/null; then
-      git checkout "plan/$ms" -- "$path"
+      git checkout "plan/$ms" -- "$path" || fatal "Rebuild kann $path nicht aus plan/$ms wiederherstellen."
     fi
   done
   {
@@ -779,49 +823,61 @@ deps_met() {
 }
 
 run_ms() {
-  local ms="$1" round verdict_value gate_rc max_rounds arb_rc
+  local ms="$1" round verdict_value gate_rc max_rounds arb_rc diff_rc
+  local infra_attempt gate_marker review_marker qa_marker postqa_marker pure_error
+  RUN_MS_RC=0
   CURRENT_MS="$ms"
   mkdir -p "$ORCH/handoff/$ms" "$ORCH/state/$ms"
   log "=== $ms start ==="
 
   if ! phase_done "$ms" 1-acceptance; then
     model_phase reviewer 10-acceptance.md 10-acceptance "$ms" 1 1-acceptance
-    [ "$HALT_REQUESTED" = 0 ] || return 10
+    if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
   fi
 
   if ! phase_done "$ms" 3-plan-approved; then
     round="$(cat "$ORCH/state/$ms/plan-round" 2>/dev/null || echo 1)"
     while :; do
-      model_phase builder 20-plan.md 20-plan "$ms" "$round"
-      [ "$HALT_REQUESTED" = 0 ] || return 10
-      model_phase reviewer 30-plan-review.md 30-plan-review "$ms" "$round"
-      [ "$HALT_REQUESTED" = 0 ] || return 10
+      if ! phase_done "$ms" "plan-r$round-planned"; then
+        model_phase builder 20-plan.md 20-plan "$ms" "$round" "plan-r$round-planned"
+        if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
+      fi
+      if ! phase_done "$ms" "plan-r$round-reviewed"; then
+        model_phase reviewer 30-plan-review.md 30-plan-review "$ms" "$round" "plan-r$round-reviewed"
+        if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
+      fi
       verdict_value="$(verdict "$ms" plan)"
       if [ "$verdict_value" = PASS ]; then break; fi
       if [ "$verdict_value" = ESCALATE ] || [ "$round" -ge "$MAX_ROUNDS_PLAN" ]; then
         if arbiter "$ms" plan "$round"; then arb_rc=0; else arb_rc=$?; fi
-        [ "$arb_rc" = 2 ] && return 10
-        if [ "$arb_rc" != 0 ]; then park "$ms" "Plan nicht auflösbar; Arbiter benötigt HUMAN."; return 3; fi
+        if [ "$arb_rc" = 2 ]; then RUN_MS_RC=10; return 0; fi
+        if [ "$arb_rc" != 0 ]; then
+          park "$ms" "Plan nicht auflösbar; Arbiter benötigt HUMAN."
+          RUN_MS_RC=3
+          return 0
+        fi
       fi
       round=$((round+1))
-      printf '%s\n' "$round" > "$ORCH/state/$ms/plan-round"
+      printf '%s\n' "$round" > "$ORCH/state/$ms/plan-round" \
+        || fatal "Planrunde kann nicht gespeichert werden: $ms r$round"
     done
-    touch "$ORCH/state/$ms/3-plan-approved.done"
-    CURRENT_PHASE=30-plan-approved
+    touch "$ORCH/state/$ms/3-plan-approved.done" \
+      || fatal "Planfreigabe-Marker kann nicht geschrieben werden: $ms"
     commit_phase "$ms" 30-plan-approved "orch($ms): approve plan"
     tag_once "plan/$ms" "plan approved for $ms"
-    [ "$HALT_REQUESTED" = 0 ] || return 10
+    if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
   fi
 
   round="$(cat "$ORCH/state/$ms/round" 2>/dev/null || echo 1)"
   if ! phase_done "$ms" 5-built; then
     model_phase builder 40-build.md 40-build "$ms" "$round" 5-built
-    [ "$HALT_REQUESTED" = 0 ] || return 10
+    if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
   fi
 
   if [ "$QA_ENABLED" != 1 ] && qa_required "$ms" && ! phase_done "$ms" 5b-qa; then
     park "$ms" "QA-Route inaktiv, aber QA ist ab $QA_REQUIRED_FROM Pflicht; keine Rework-Runde wird verbraucht."
-    return 3
+    RUN_MS_RC=3
+    return 0
   fi
 
   max_rounds="$MAX_ROUNDS_REWORK"
@@ -848,35 +904,39 @@ run_ms() {
 
     if [ "$verdict_value" = ESCALATE ] || [ "$round" -ge "$max_rounds" ]; then
       if arbiter "$ms" code "$round"; then arb_rc=0; else arb_rc=$?; fi
-      [ "$arb_rc" = 2 ] && return 10
+      if [ "$arb_rc" = 2 ]; then RUN_MS_RC=10; return 0; fi
       if [ "$arb_rc" != 0 ]; then
         park "$ms" "Codepfad festgefahren (Gates rc=$gate_rc, Verdict=$verdict_value); Arbiter benötigt HUMAN."
-        return 3
+        RUN_MS_RC=3
+        return 0
       fi
       max_rounds=$((MAX_ROUNDS_REWORK+ARBITER_EXTRA_ROUNDS))
     fi
 
     round=$((round+1))
-    printf '%s\n' "$round" > "$ORCH/state/$ms/round"
+    infra_attempt=0
+    printf '%s\n' "$round" > "$ORCH/state/$ms/round" \
+      || fatal "Rework-Runde kann nicht gespeichert werden: $ms r$round"
     if [ "$LADDER_ENABLED" = 1 ] && [ "$round" -ge "$REBUILD_ROUND" ] && ! phase_done "$ms" 5c-rebuild; then
-      rebuild_reset "$ms"
-      [ "$HALT_REQUESTED" = 0 ] || return 10
-      model_phase builder 62-rebuild.md 62-rebuild "$ms" "$round"
+      rebuild_reset "$ms" "$round"
+      if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
+      model_phase builder 62-rebuild.md 62-rebuild "$ms" "$round" "rebuild-r$round"
     else
       model_phase builder 60-rework.md 60-rework "$ms" "$round"
     fi
-    [ "$HALT_REQUESTED" = 0 ] || return 10
+    if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
   done
 
   if git diff --quiet "plan/$ms"..HEAD -- PROGRESS.md; then
     fatal "$ms kann nicht DONE werden: PROGRESS.md wurde seit plan/$ms nicht aktualisiert."
+  else
+    diff_rc=$?
+    [ "$diff_rc" = 1 ] || fatal "PROGRESS-Prüfung für $ms fehlgeschlagen (rc=$diff_rc)."
   fi
-  touch "$ORCH/state/$ms/8-done.done"
-  CURRENT_PHASE=done
-  refresh_status "" 0 false
-  git add -A
-  git diff --cached --quiet || git commit -qm "orch($ms): complete milestone"
+  touch "$ORCH/state/$ms/8-done.done" || fatal "DONE-Marker kann nicht geschrieben werden: $ms"
+  commit_phase "$ms" done "orch($ms): complete milestone"
   tag_once "done/$ms" "milestone $ms done"
+  refresh_status "" 0 false
   notify_event DONE "$ms abgeschlossen"
   log "=== $ms DONE ==="
   if [ "${PUSH_REMOTE:-0}" = 1 ] && git remote get-url origin >/dev/null 2>&1; then
@@ -908,12 +968,17 @@ while IFS= read -r ms; do
   fi
   if ! deps_met "$ms"; then
     log "$ms wartet auf: $DEPS_WAIT"
+    if [ -n "$TARGET" ]; then
+      fatal "$ms kann nicht gestartet werden; offene Abhängigkeiten: $DEPS_WAIT"
+    fi
     continue
   fi
   COUNT=$((COUNT+1))
   [ "$COUNT" -le "$MAX_MS_PER_RUN" ] || { log "MAX_MS_PER_RUN=$MAX_MS_PER_RUN erreicht"; break; }
   RAN=$((RAN+1))
-  if run_ms "$ms"; then rc=0; else rc=$?; fi
+  RUN_MS_RC=0
+  run_ms "$ms"
+  rc="$RUN_MS_RC"
   case "$rc" in
     0) ;;
     3) ;;
@@ -929,8 +994,11 @@ if [ "$HALT_REQUESTED" = 1 ]; then
 fi
 if [ "$RAN" = 0 ] && [ -z "$PARKED_LIST" ] && [ -z "$TARGET" ]; then
   # Entweder alles fertig oder ein ungültiger/cyclischer Dependency-Stand.
-  if jq -e --arg dir "$ORCH/state" 'all(.[]; .id as $id | true)' "$MILESTONES" >/dev/null \
-     && while IFS= read -r ms; do phase_done "$ms" 8-done || exit 1; done < <(jq -r '.[].id' "$MILESTONES"); then
+  all_done=1
+  while IFS= read -r ms; do
+    phase_done "$ms" 8-done || all_done=0
+  done < <(jq -r '.[].id' "$MILESTONES")
+  if [ "$all_done" = 1 ]; then
     CURRENT_MS=""; CURRENT_PHASE=done; refresh_status "" 0 false
     log "Alle Meilensteine des Manifests abgeschlossen."
     exit 0
