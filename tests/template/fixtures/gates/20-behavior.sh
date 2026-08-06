@@ -15,6 +15,14 @@ case "${ACCEPTANCE_SCENARIO:-}" in
     echo "behavior: intentional permanent failure in round $ROUND"
     exit 1
     ;;
+  T6)
+    echo "behavior: $MILESTONE passed with digit-free id"
+    exit 0
+    ;;
+  TERROR)
+    echo "behavior: intentional infrastructure error in round $ROUND" >&2
+    exit 2
+    ;;
   *)
     echo "behavior: unknown fixture scenario" >&2
     exit 2

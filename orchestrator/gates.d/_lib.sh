@@ -22,11 +22,20 @@ gate_run_configured() {
   bash -c "$command_value"
   rc=$?
   set -e
-  case "$rc" in
-    0) echo "$label: Kommando erfolgreich"; return 0 ;;
-    1) echo "$label: Kommando meldet fachlichen Fehlschlag"; return 1 ;;
-    *) echo "$label: Kommando-/Infrastrukturfehler rc=$rc" >&2; return 2 ;;
-  esac
+  if [ "$rc" = 0 ]; then
+    echo "$label: Kommando erfolgreich"
+    return 0
+  fi
+  local error_code error_codes="${GATE_ERROR_CODES:-126 127}"
+  for error_code in $error_codes; do
+    case "$error_code" in ''|*[!0-9]*) echo "$label: ungültiger GATE_ERROR_CODES-Eintrag: $error_code" >&2; return 2 ;; esac
+    if [ "$rc" = "$error_code" ]; then
+      echo "$label: Kommando-/Infrastrukturfehler rc=$rc" >&2
+      return 2
+    fi
+  done
+  echo "$label: Kommando meldet fachlichen Fehlschlag rc=$rc"
+  return 1
 }
 
 gate_changed() {

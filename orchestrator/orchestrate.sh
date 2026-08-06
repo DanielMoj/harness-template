@@ -238,6 +238,7 @@ preflight() {
   require_uint MAX_ROUNDS_REWORK "$MAX_ROUNDS_REWORK"
   require_uint REBUILD_ROUND "$REBUILD_ROUND"
   require_uint RETRY_MAX "$RETRY_MAX"
+  require_uint GATE_ERROR_RETRIES "$GATE_ERROR_RETRIES"
   require_uint MAX_MS_PER_RUN "$MAX_MS_PER_RUN"
 
   case "$ROLE_GUARDS" in on|off) ;; *) fatal "ROLE_GUARDS muss on oder off sein." ;; esac
@@ -534,7 +535,9 @@ ownership_check() {
   fi
   clear_worktree_snapshot
   mkdir -p "$ORCH/state/$ms"
-  printf '%s\t%s\t%s\n' "$(date --iso-8601=seconds)" "$role" "$phase" > "$ORCH/state/$ms/territory-ok"
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "$(date --iso-8601=seconds)" "$role" "$phase" "$round" "$base" \
+    > "$ORCH/state/$ms/territory-ok"
   return 0
 }
 
@@ -667,9 +670,15 @@ commit_phase() {
 }
 
 model_phase() {
-  local role="$1" prompt="$2" phase="$3" ms="$4" round="$5" marker="${6:-}" dispute="${7:-code}"
+  local role="$1" prompt="$2" phase="$3" ms="$4" round="$5" marker="${6:-}" dispute="${7:-code}" phase_marker
   run_model "$role" "$prompt" "$phase" "$ms" "$round" "$dispute"
-  [ -z "$marker" ] || { mkdir -p "$ORCH/state/$ms"; touch "$ORCH/state/$ms/$marker.done"; }
+  if [ -n "$marker" ]; then
+    mkdir -p "$ORCH/state/$ms"
+    for phase_marker in $marker; do
+      touch "$ORCH/state/$ms/$phase_marker.done" \
+        || fatal "Phasenmarker kann nicht geschrieben werden: $ms/$phase_marker"
+    done
+  fi
   commit_phase "$ms" "$phase" "orch($ms): $role $phase r$round"
 }
 
@@ -712,12 +721,14 @@ qa_required() {
 }
 
 run_gates() {
-  local ms="$1" round="$2" rc
+  local ms="$1" round="$2" marker="$3" rc
   stop_check
   CURRENT_MS="$ms"; CURRENT_PHASE="gates"
   if ROUND="$round" "$ORCH/verifier.sh" "$ms"; then rc=0; else rc=$?; fi
+  mkdir -p "$ORCH/state/$ms"
+  touch "$ORCH/state/$ms/$marker.done" || fatal "Gate-Marker kann nicht geschrieben werden: $marker"
   commit_phase "$ms" gates "orch($ms): gates r$round (rc=$rc)"
-  return "$rc"
+  LAST_GATE_RC="$rc"
 }
 
 ensure_project_assets() {
@@ -847,6 +858,18 @@ deps_met() {
   [ -z "$DEPS_WAIT" ]
 }
 
+gate_rc_from_state() {
+  local ms="$1" result
+  result="$(jq -er '.result' "$ORCH/state/$ms/gates.json")" \
+    || fatal "Gate-Ergebnis fehlt oder ist ungültig: $ms"
+  case "$result" in
+    pass) LAST_GATE_RC=0 ;;
+    fail) LAST_GATE_RC=1 ;;
+    error) LAST_GATE_RC=2 ;;
+    *) fatal "unbekanntes Gate-Ergebnis für $ms: $result" ;;
+  esac
+}
+
 run_ms() {
   local ms="$1" round verdict_value gate_rc max_rounds arb_rc diff_rc
   local infra_attempt gate_marker review_marker qa_marker postqa_marker pure_error
@@ -907,22 +930,66 @@ run_ms() {
 
   max_rounds="$MAX_ROUNDS_REWORK"
   [ ! -f "$ORCH/state/$ms/arbiter-granted" ] || max_rounds=$((MAX_ROUNDS_REWORK+ARBITER_EXTRA_ROUNDS))
+  infra_attempt="$(cat "$ORCH/state/$ms/gate-error-attempt" 2>/dev/null || echo 0)"
   while :; do
     ensure_project_assets "$ms"
-    if run_gates "$ms" "$round"; then gate_rc=0; else gate_rc=$?; fi
-    [ "$HALT_REQUESTED" = 0 ] || return 10
+    gate_marker="gates-r$round-infra$infra_attempt"
+    if ! phase_done "$ms" "$gate_marker"; then
+      run_gates "$ms" "$round" "$gate_marker"
+      gate_rc="$LAST_GATE_RC"
+    else
+      gate_rc_from_state "$ms"
+      gate_rc="$LAST_GATE_RC"
+    fi
+    pure_error=0
+    [ "$gate_rc" != 2 ] || pure_error=1
+    if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
 
-    if [ "$QA_ENABLED" = 1 ] && { ! phase_done "$ms" 5b-qa || [ -f "$ORCH/state/$ms/qa-requested" ]; }; then
-      model_phase qa 45-qa.md 45-qa "$ms" "$round" 5b-qa
+    if [ "$pure_error" = 0 ] && [ "$QA_ENABLED" = 1 ] \
+        && { ! phase_done "$ms" 5b-qa || [ -f "$ORCH/state/$ms/qa-requested" ]; }; then
+      qa_marker="qa-r$round"
+      postqa_marker="gates-r$round-infra$infra_attempt-postqa"
+      rm -f "$ORCH/state/$ms/$postqa_marker.done"
+      model_phase qa 45-qa.md 45-qa "$ms" "$round" "5b-qa $qa_marker"
       rm -f "$ORCH/state/$ms/qa-requested"
-      [ "$HALT_REQUESTED" = 0 ] || return 10
-      if run_gates "$ms" "$round"; then gate_rc=0; else gate_rc=$?; fi
-      [ "$HALT_REQUESTED" = 0 ] || return 10
+      if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
     fi
 
-    model_phase reviewer 50-code-review.md 50-code-review "$ms" "$round"
-    [ "$HALT_REQUESTED" = 0 ] || return 10
+    if [ "$pure_error" = 0 ] && [ "$QA_ENABLED" = 1 ] && phase_done "$ms" "qa-r$round"; then
+      postqa_marker="gates-r$round-infra$infra_attempt-postqa"
+      if ! phase_done "$ms" "$postqa_marker"; then
+        run_gates "$ms" "$round" "$postqa_marker"
+        gate_rc="$LAST_GATE_RC"
+      else
+        gate_rc_from_state "$ms"
+        gate_rc="$LAST_GATE_RC"
+      fi
+      pure_error=0
+      [ "$gate_rc" != 2 ] || pure_error=1
+      if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
+    fi
+
+    review_marker="code-review-r$round-infra$infra_attempt"
+    if ! phase_done "$ms" "$review_marker"; then
+      model_phase reviewer 50-code-review.md 50-code-review "$ms" "$round" "$review_marker"
+      if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
+    fi
     verdict_value="$(verdict "$ms" code)"
+
+    if [ "$pure_error" = 1 ]; then
+      if [ "$infra_attempt" -lt "$GATE_ERROR_RETRIES" ]; then
+        infra_attempt=$((infra_attempt+1))
+        printf '%s\n' "$infra_attempt" > "$ORCH/state/$ms/gate-error-attempt" \
+          || fatal "Gate-error-Zähler kann nicht geschrieben werden: $ms"
+        log "Gate error für $ms: Infrastruktur-Wiederholung $infra_attempt/$GATE_ERROR_RETRIES in Runde $round; keine Runde verbraucht"
+        continue
+      fi
+      park "$ms" "Infrastruktur (Gate error) nach $GATE_ERROR_RETRIES Wiederholungen in Runde $round."
+      RUN_MS_RC=3
+      return 0
+    fi
+    rm -f "$ORCH/state/$ms/gate-error-attempt"
+
     if [ "$verdict_value" = PASS ] && [ "$gate_rc" = 0 ]; then
       break
     fi
