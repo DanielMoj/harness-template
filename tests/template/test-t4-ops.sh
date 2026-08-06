@@ -26,6 +26,7 @@ prepare_orchestrator_case T2 "$REPO"
   set -e
   [ "$watchdog_rc" = 1 ]
   cp orchestrator/state/summary.json "$CASE_ROOT/summary-before-double-start.json"
+  heartbeat_epoch="$(date -d "$(jq -r .ts "$CASE_ROOT/summary-before-double-start.json")" +%s)"
   notify_before="$(wc -l < "$NOTIFY_LOG")"
   set +e
   bash orchestrator/orchestrate.sh > "$CASE_ROOT/double-start.log" 2>&1
@@ -36,7 +37,8 @@ prepare_orchestrator_case T2 "$REPO"
   cmp -s "$CASE_ROOT/summary-before-double-start.json" orchestrator/state/summary.json
   [ "$(wc -l < "$NOTIFY_LOG")" = "$notify_before" ]
   set +e
-  WATCHDOG_NOW_EPOCH=2000000000 bash orchestrator/watchdog.sh
+  WATCHDOG_STALE_SECONDS=30 \
+    WATCHDOG_NOW_EPOCH=$((heartbeat_epoch + 60)) bash orchestrator/watchdog.sh
   watchdog_after_rc=$?
   set -e
   [ "$watchdog_after_rc" = 1 ]
