@@ -3,9 +3,11 @@ message: "Bitte zitieren Sie diese Software über die Angaben in dieser Datei."
 type: software
 title: "harness-template: Vorlage für eine Multi-Agenten-Entwicklungsumgebung mit ausführbaren Abnahmeprüfungen"
 version: 1.0.1
+date-released: "2026-10-14"
 authors:
   - family-names: Moj
     given-names: Daniel Andreas
+    orcid: "https://orcid.org/0009-0008-1594-6065"
 license: MIT
 repository-code: "https://github.com/DanielMoj/harness-template"
 abstract: "Vorlage für die Softwareentwicklung mit Sprachmodell-Agenten, bei der die Rolle, die Code schreibt, ihn nicht selbst abnimmt. Ein Bash-Orchestrator führt jeden Meilenstein durch feste Phasen mit getrennten Rollen: Ein Builder plant und programmiert, ein Reviewer schreibt vor der Umsetzung ausführbare Abnahmetests und prüft Plan und Code, eine optionale QA-Rolle sucht reproduzierbare Gegenbeispiele. Es sind Rollen, nicht zwingend verschiedene Modelle; welches Modell welche Rolle ausführt, legt der Betreiber in der Konfiguration fest. Abgeschlossen wird ein Meilenstein nur, wenn die vom Betreiber gewählten ausführbaren Prüfungen bestehen und der Reviewer zustimmt; ein Modellurteil allein genügt nie. Die Spezifikation ändert nur der Mensch; was eine Schiedsrichter-Sitzung nicht auflösen kann, wird geparkt und an den Menschen eskaliert. Selbsttests mit Modellattrappen prüfen die Ablauflogik ohne Modellaufrufe. Prototyp, mit agentengestützter Codeerzeugung entstanden."

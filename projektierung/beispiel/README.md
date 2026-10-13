@@ -2,7 +2,9 @@
 
 Dieses Verzeichnis ist eine lokale, read-only Messlatte für die
 Projektierungs-KI. Die Dateien wurden aus einem realen Harness-Snapshot
-kopiert und haben keinerlei Laufzeit- oder Pfadabhängigkeit zu ihrer Quelle.
+von Demiurg kopiert, einem eigenen Computerspiel-Projekt des Autors (daher
+Meilensteinnamen wie „Waffe 1: Meteorit“), und haben keinerlei Laufzeit- oder
+Pfadabhängigkeit zu ihrer Quelle.
 
 Enthalten sind:
 

@@ -690,8 +690,11 @@ durchlässig waren.
 ## 11. Herkunft und Abnahme-Archiv
 
 Laut `docs/template/BAUPLAN.md` wurde die Vorlage aus dem Projekt Demiurg
-extrahiert. Mit der Vorgängerfassung dieser Entwicklungsumgebung entstand von
-Ende Juni bis Mitte Juli 2026 die Liquiditätsanwendung, veröffentlicht als
+extrahiert, einem eigenen Computerspiel-Projekt des Autors (daher
+Meilensteinnamen wie „Waffe 1: Meteorit“ im Beispiel unter
+`projektierung/beispiel/`). Mit der Vorgängerfassung dieser
+Entwicklungsumgebung entstand von Ende Juni bis Mitte Juli 2026 die
+Liquiditätsanwendung, veröffentlicht als
 [liquiditaetsplanung](https://github.com/DanielMoj/liquiditaetsplanung). Die
 Vorlage ist die verallgemeinerte Nachfolgerin beider Einsätze.
 
@@ -709,8 +712,9 @@ Template-/Nachprüfungsstand vor dieser späteren README-Korrektur.
 die veröffentlichte Fassung mit Lizenz und Zitierdaten: Orchestrator, Gates,
 Prompts und Tests sind gegenüber `v1.0` unverändert. Hinzu kommen `LICENSE`,
 `CITATION.cff`, `.zenodo.json` und `.gitattributes`, die README-Ergänzungen
-seit `v1.0`, ein Eintrag `.claude/` in `.gitignore` und ein an den Code
-angeglichener Satz in `projektierung/SPEC-KONTRAKT.md` §6. In den
+seit `v1.0`, ein Eintrag `.claude/` in `.gitignore`, ein an den Code
+angeglichener Satz in `projektierung/SPEC-KONTRAKT.md` §6 und ein Halbsatz zur
+Herkunft in `projektierung/beispiel/README.md`. In den
 Abnahmeberichten sind lokale Pfade und Benutzernamen für die Veröffentlichung
 neutralisiert (etwa `~/dev/…` statt des Home-Verzeichnisses); sonst sind sie
 unverändert.
@@ -837,11 +841,11 @@ Die Vorlage ist mit agentengestützter Codeerzeugung entstanden. Commits des
 Agenten sind als solche gekennzeichnet: 19 der 20 Commits bis `7a27de2`
 tragen den Autor `Codex <codex@local>`; der übrige (`3d95ed7`) legt den
 Bericht der unabhängigen Wiederabnahme ab. Die Veröffentlichungsfassung
-1.0.1 hat Claude Code vorbereitet; ihr Commit nennt das im Vermerk
+1.0.1 hat Claude Code vorbereitet; die Commits dazu nennen das im Vermerk
 `Co-Authored-By`.
 
-Eigenanteil von Daniel Andreas Moj: Architektur, Rollen- und
-Freigaberegeln, Prüfstrategie sowie Prüfung und Freigabe der Ergebnisse.
+Eigenanteil von Daniel Andreas Moj: Architektur, Rollen-, Rechte- und
+Eskalationsregeln, Prüfstrategie sowie Prüfung und Freigabe der Ergebnisse.
 Bauplan, Rework-Auftrag und Betreiberentscheide E1–E9 unter
 `docs/template/` dokumentieren diese Vorgaben.
 
