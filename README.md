@@ -1,5 +1,7 @@
 # harness-template — Werkbank für autonome Projekte
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23352917.svg)](https://doi.org/10.5281/zenodo.23352917)
+
 ## Summary (English)
 
 harness-template is a template for developing software with language-model
@@ -852,13 +854,16 @@ Bauplan, Rework-Auftrag und Betreiberentscheide E1–E9 unter
 ## 16. Zitieren
 
 Bitte über die Angaben in [`CITATION.cff`](CITATION.cff) zitieren; GitHub
-zeigt sie unter „Cite this repository“ an. Die DOI der Zenodo-Archivierung
-steht noch aus und wird hier nachgetragen.
+zeigt sie unter „Cite this repository“ an. Die Fassung 1.0.1 ist bei Zenodo
+archiviert:
+
+- Version 1.0.1: [10.5281/zenodo.23352918](https://doi.org/10.5281/zenodo.23352918)
+- alle Versionen (Konzept-DOI, führt stets zur neuesten Version):
+  [10.5281/zenodo.23352917](https://doi.org/10.5281/zenodo.23352917)
 
 Moj, Daniel Andreas (2026): harness-template: Vorlage für eine
 Multi-Agenten-Entwicklungsumgebung mit ausführbaren Abnahmeprüfungen.
-Software, Version 1.0.1. https://github.com/DanielMoj/harness-template.
-DOI: noch offen.
+Software, Version 1.0.1. Zenodo. https://doi.org/10.5281/zenodo.23352918.
 
 ## 17. Lizenz
 

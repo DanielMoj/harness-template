@@ -4,6 +4,7 @@ type: software
 title: "harness-template: Vorlage für eine Multi-Agenten-Entwicklungsumgebung mit ausführbaren Abnahmeprüfungen"
 version: 1.0.1
 date-released: "2026-10-14"
+doi: "10.5281/zenodo.23352917"
 authors:
   - family-names: Moj
     given-names: Daniel Andreas
