@@ -1,6 +1,6 @@
 # Nachprüfung N-1 — MCP-Symlink-Pfadflucht
 
-Prüfzeitpunkt: 2026-08-06T18:33+02:00. Prüfstand: `/home/danie/dev/harness-template`,
+Prüfzeitpunkt: 2026-08-06T18:33+02:00. Prüfstand: `~/dev/harness-template`,
 HEAD `dc021ee` („test(ops): make watchdog clock heartbeat-relative (N-2)"),
 Linux 6.6.87.2-microsoft-standard-WSL2, bash 5.3.9(1), git 2.53.0, Python 3.14.4.
 Eigener Fall: `/tmp/n1-nachpruefung.oGZbGs/repo`.
@@ -130,7 +130,7 @@ tail -n 40 src/notiz   Exit-Code: 0 | OPENROUTER_API_KEY=sk-or-v1-SECRETSENV999
                                     | NOTIFY_TOKEN=GEHEIM-NOTIFY-999
 tail -n 40 src/konfig  Exit-Code: 0 | AUTONOMY_LEVEL=3 | ACCEPTANCE_SCENARIO=T2
                                     | TUNNEL_TOKEN=GEHEIM-TUNNEL-777
-tail -n 5  src/aussen  Exit-Code: 0 | danie:x:1000:1000::/home/danie:/bin/bash
+tail -n 5  src/aussen  Exit-Code: 0 | user:x:1000:1000::/home/user:/bin/bash
 wc -l src/notiz        Exit-Code: 0 | 2 src/notiz
 wc -l src/konfig       Exit-Code: 0 | 3 src/konfig
 wc -l src/aussen       Exit-Code: 0 | 27 src/aussen

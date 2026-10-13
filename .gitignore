@@ -37,7 +37,8 @@ orchestrator/mcp/connector.url
 # Lokale Extraktionsquelle, nie Teil des fertigen Templates.
 reference/patch-v2/
 
-# Plattform/Editor
+# Plattform/Editor und lokale Werkzeugeinstellungen
 .DS_Store
+.claude/
 __pycache__/
 *.pyc

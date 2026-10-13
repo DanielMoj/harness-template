@@ -46,7 +46,7 @@ PATH=…/fake-bin:$PATH FAKE_NOTIFY_LOG=/tmp/pid.log bash orchestrator/orchestra
 bootstrap: summary.json contract v1 gültig
 BOOTSTRAP_EXIT=0
 …
-fatal: empty ident name (for <danie@DMo.localdomain>) not allowed
+fatal: empty ident name (for <user@host.localdomain>) not allowed
 [20260806-003252] === M0 DONE ===
 [20260806-003252] Lauf beendet.
 EXITCODE=0
@@ -383,7 +383,7 @@ Das Feld `tunnel=` fehlt; der Block stammt aus einer Vorversion. Beide Dateien l
 | 1 | `git log --oneline --all --stat`, `git log --format='%H %ci %s'` | 0 — 5 Commits |
 | 2 | `find . -path ./.git -prune -o -type f -print \| sort` | 0 — 105 Dateien |
 | 3 | `git status --porcelain --untracked-files=all` (vor und nach der Prüfung) | 0 — leer, `HEAD=865840e` unverändert |
-| 4 | **`HARNESS_MCP_PYTHON=/home/danie/dev/mcp-demiurg/.venv/bin/python bash tests/template/run-all.sh`** | **0** — T-1…T-5 PASS, „A6 PASS" |
+| 4 | **`HARNESS_MCP_PYTHON=~/dev/mcp-demiurg/.venv/bin/python bash tests/template/run-all.sh`** | **0** — T-1…T-5 PASS, „A6 PASS" |
 | 5 | Zyklus-Manifest, `bash orchestrator/orchestrate.sh` | **1** (B-06) |
 | 6 | `bash orchestrator/orchestrate.sh M1` bei offener dep | **0**, `phase:"done"` (B-07) |
 | 7 | Builder schreibt `reports/ dist/ artifacts/ coverage/ orchestrator/logs/`, `orchestrate.sh` | **0**, 0 Verletzungen (B-02) |

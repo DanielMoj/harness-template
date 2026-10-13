@@ -192,7 +192,7 @@ zurückgerollt, nie committet:
 
 ```text
 $ ls -la orchestrator/.lock/ ; cat orchestrator/.lock/stray
--rw-r--r-- 1 danie danie  31 Aug  6 00:59 stray
+-rw-r--r-- 1 user user  31 Aug  6 00:59 stray
 model wrote operator territory
 
 $ git status --porcelain --untracked-files=all

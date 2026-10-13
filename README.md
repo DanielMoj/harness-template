@@ -1,7 +1,69 @@
 # harness-template — Werkbank für autonome Projekte
 
-Stand **v1.0**. Bauplan, zwei anfängliche adversarielle Prüfberichte,
-Rework und Nachprüfungen liegen unter `docs/template/`.
+## Summary (English)
+
+harness-template is a template for developing software with language-model
+agents in which the role that writes the code never accepts it. A Bash
+orchestrator drives each milestone through fixed phases with separate roles:
+a builder plans and implements, a reviewer writes executable acceptance tests
+before implementation and reviews the plan and the code, and an optional QA
+role searches for reproducible counterexamples. These are roles, not
+necessarily different models: the operator decides in
+`orchestrator/config.env` which command, and thus which model, runs each
+role. A milestone is completed only when the executable checks selected by
+the operator (gate scripts such as tests, linting or mutation testing) pass
+and the reviewer approves; a model verdict alone never suffices, and no model
+role may write the gate results. After every model call the orchestrator
+uses Git to verify that the role stayed within its write territory and rolls
+back violations. Only the human operator changes the specification, and
+disputes that a fresh arbiter session cannot resolve are parked and handed
+to the human in an escalation file. A self-test suite with stub models
+exercises the orchestration logic without calling any model; the
+documentation below is in German.
+
+## Überblick für Außenstehende
+
+**Wozu.** Die Vorlage ist ein Gerüst, mit dem Sprachmodell-Agenten Software,
+je nach Preset auch Texte oder Datenpipelines, Meilenstein für Meilenstein
+bauen, ohne dass die Rolle, die etwas herstellt, es selbst abnimmt. Ein
+Builder plant und programmiert, ein Reviewer schreibt vorab die Abnahmetests
+und prüft Plan und Code, eine optionale QA-Rolle sucht reproduzierbare
+Gegenbeispiele. Das sind Rollen, nicht zwingend verschiedene Modelle: Welches
+Kommando und damit welches Modell eine Rolle ausführt, legt der Betreiber
+fest.
+
+**Was die Vorlage erzwingt.**
+
+- *Abnahme nur mit bestandenen Prüfungen:* Ein Meilenstein ist erst fertig,
+  wenn die vom Betreiber aktivierten Gate-Skripte `pass` melden und der
+  Reviewer zustimmt; ein Modellurteil allein genügt nie (`run_ms` in
+  `orchestrator/orchestrate.sh`, Gate-Lauf in `orchestrator/verifier.sh`).
+- *Schreibrechte je Rolle und Phase:* Nach jedem Modellaufruf prüft der
+  Orchestrator per Git, was sich geändert hat, und verwirft Änderungen
+  außerhalb des Rollenbereichs (`path_allowed`, `ownership_check`).
+  Spezifikation, Gate-Auswahl, Meilensteinplan, Konfiguration und
+  Gate-Ergebnisse gehören keiner Modellrolle.
+- *Begrenzte Schleifen:* Rundenbudgets, optional ein einmaliger Neuaufbau
+  und eine frische Schiedsrichter-Sitzung; was sie nicht auflöst, wird
+  geparkt und landet als `orchestrator/ESCALATION-<MS>.md` beim Menschen.
+
+**Was sie nicht erzwingt.**
+
+- verschiedene Modelle oder Anbieter je Rolle; auch der Schiedsrichter läuft
+  über das Reviewer-Kommando,
+- die Aussagekraft der Prüfungen: Was ein Gate prüft, legt das Projekt fest;
+  ohne aktiviertes Mutations- oder Trace-Gate gibt es diese Prüfungen nicht,
+- dass jede Entscheidung über den Menschen läuft: Wo die Spezifikation
+  schweigt, legen Reviewer oder Schiedsrichter die Auslegung bindend als ADR
+  fest; Bauregeln, Protokollvertrag und Abnahmetests gehören dem Reviewer,
+- eine vollständige Abschottung: Alle Rollen laufen unter demselben Benutzer
+  im selben Checkout (Abschnitt 8).
+
+---
+
+Stand **v1.0.1**: veröffentlichte Fassung mit derselben Ablauflogik wie der
+Abnahmestand `v1.0` (Abschnitt 11). Bauplan, zwei anfängliche adversarielle
+Prüfberichte, Rework und Nachprüfungen liegen unter `docs/template/`.
 
 Dieses Template orchestriert drei getrennte Rollen: Ein **Builder** baut,
 ein **Reviewer** prüft und entscheidet, und eine optionale **QA-/Red-Team-
@@ -44,6 +106,10 @@ Template vorhanden.
 11. [Herkunft und Abnahme-Archiv](#11-herkunft-und-abnahme-archiv)
 12. [FAQ](#12-faq)
 13. [Designphilosophie](#13-designphilosophie)
+14. [Erkenntnisse aus dem Einsatz](#14-erkenntnisse-aus-dem-einsatz)
+15. [Entstehung](#15-entstehung)
+16. [Zitieren](#16-zitieren)
+17. [Lizenz](#17-lizenz)
 
 ---
 
@@ -93,6 +159,58 @@ PREFLIGHT
       ├─ Gates pass + Reviewer PASS → DONE
       └─ sonst REWORK → nächste Runde ab GATES
 ```
+
+Derselbe Ablauf als Diagramm, mit Rollen, Gates und den Stellen, an denen
+der Mensch entscheidet:
+
+```mermaid
+flowchart TD
+    OP["Betreiber: Spezifikation freigeben,<br/>Gates wählen, konfigurieren, committen"]
+    PRE["PREFLIGHT<br/>Orchestrator"]
+    ACC["10 ACCEPTANCE<br/>Reviewer: Kriterien und Abnahmetests"]
+    PLAN["20 PLAN<br/>Builder"]
+    PREV{"30 PLAN-REVIEW<br/>Reviewer"}
+    BUILD["40 BUILD<br/>Builder"]
+    GATES["GATES<br/>verifier.sh führt die Gate-Skripte aus"]
+    QA["45 QA, optional<br/>Gegenbeispiele als Tests,<br/>danach GATES erneut"]
+    CREV{"50 CODE-REVIEW<br/>Reviewer"}
+    DONE["DONE<br/>PROGRESS.md geändert, Tag done/MS"]
+    FIX["60 REWORK, später einmal 62 REBUILD<br/>Builder"]
+    ARB{"70 ARBITER<br/>frische Reviewer-Sitzung,<br/>einmal je Meilenstein"}
+    PARK["PARK<br/>ESCALATION-MS.md, Benachrichtigung"]
+    HUMAN["Mensch entscheidet und<br/>entfernt den Parkmarker"]
+
+    OP --> PRE --> ACC --> PLAN --> PREV
+    PREV -->|PASS| BUILD
+    PREV -->|REWORK| PLAN
+    PREV -->|ESCALATE oder Planbudget erschöpft| ARB
+    BUILD --> GATES
+    GATES -->|QA aktiv und fällig| QA
+    QA --> CREV
+    GATES --> CREV
+    CREV -->|PASS und Gates pass| DONE
+    CREV -->|sonst| FIX
+    CREV -->|ESCALATE oder Rundenbudget erschöpft| ARB
+    CREV -->|nur Gate-error, nach Wiederholungen| PARK
+    FIX --> GATES
+    ARB -->|RESOLVE im Planstreit| PLAN
+    ARB -->|RESOLVE im Codestreit, Zusatzrunden| FIX
+    ARB -->|HUMAN oder schon verbraucht| PARK
+    PARK --> HUMAN
+    HUMAN -.->|Neustart, Wiederaufnahme| PRE
+
+    classDef human stroke-width:3px,stroke-dasharray:6 4
+    class OP,PARK,HUMAN human
+```
+
+Gestrichelt umrandet sind die Stellen, an denen der Mensch entscheidet. Der
+Schiedsrichter ist ein Modell: Sein `RESOLVE` ist bindend und braucht keinen
+Betreiberentscheid. Aus dem Schiedsverfahren führen nur `HUMAN` oder ein
+erneuter Schiedsfall (`ESCALATE` oder erschöpftes Rundenbudget) im selben
+Meilenstein zum Park. Nicht eingezeichnet sind die Territoriumsprüfung
+nach jedem Modellaufruf (Verstoß: Rollback, eine Wiederholung, danach
+FATAL/Exit 2) sowie FATAL-Abbrüche, STOP und fehlende Pflicht-QA; auch diese
+Fälle landen beim Betreiber.
 
 - **PREFLIGHT** prüft Git-Identität, Manifest und Dependency-Zyklen,
   Vertragspfade, Toolchain-Versionen, reale CLI-Hilfen und konfigurierte
@@ -551,10 +669,33 @@ Der Suite-Lauf hängt Auditzeilen an den ignorierten Laufzeitpfad
 `orchestrator/mcp/calls.log` an. Das ist erwarteter Testzustand, kein
 versioniertes Artefakt.
 
+Voraussetzungen sind bash, git, jq, tmux, curl, `timeout` und python3 mit
+venv. T-1 legt dabei eine temporäre Umgebung an und installiert
+`mcp==1.28.1` aus PyPI; mit `HARNESS_MCP_PYTHON` lässt sich stattdessen ein
+vorhandenes Python mit diesem Paket verwenden. Unter Windows laufen die
+Selbsttests in WSL, etwa
+`wsl bash -lc "cd /mnt/c/<Pfad>/harness-template && tests/template/run-all.sh"`;
+`.gitattributes` sorgt dafür, dass auch ein Windows-Klon LF-Zeilenenden hat.
+
+**Gefälschte Schlüssel.** Alle Schlüssel, Tokens und Passwörter in den Tests
+(`tests/template/`, `orchestrator/mcp/tests/`) und in den Abnahmeberichten
+unter `docs/template/abnahme/` sind absichtlich gefälscht, etwa
+`sk-fixture-MUST-NOT-LEAK`, `sk-or-v1-DEADBEEFsecret123` oder
+`GEHEIM-TUNNEL-TOKEN-123`. An ihnen prüfen die Tests, dass Geheimnisse nicht
+in die Umgebung der Modellrollen gelangen, aus `orchestrator/config.env`
+nach `orchestrator/secrets.env` verschoben werden und über den MCP-Connector
+nicht lesbar sind; die Abnahmeberichte zeigen mit ihnen, wo frühere Fassungen
+durchlässig waren.
+
 ## 11. Herkunft und Abnahme-Archiv
 
-`docs/template/BAUPLAN.md` beschreibt die Extraktion aus dem damaligen
-Demiurg-Projekt. Die beiden ursprünglichen adversariellen Berichte unter
+Laut `docs/template/BAUPLAN.md` wurde die Vorlage aus dem Projekt Demiurg
+extrahiert. Mit der Vorgängerfassung dieser Entwicklungsumgebung entstand von
+Ende Juni bis Mitte Juli 2026 die Liquiditätsanwendung, veröffentlicht als
+[liquiditaetsplanung](https://github.com/DanielMoj/liquiditaetsplanung). Die
+Vorlage ist die verallgemeinerte Nachfolgerin beider Einsätze.
+
+Die beiden ursprünglichen adversariellen Berichte unter
 `docs/template/abnahme/` endeten mit **FAIL**, nicht mit Abnahme. Darauf
 folgten der achtteilige Rework R1–R8, eine unabhängige Wiederabnahme mit
 Rot-Proben gegen den Vor-Rework-Stand, zwei neue Nachbefunde zur MCP-
@@ -563,6 +704,16 @@ Berichte und Betreiberentscheide E1–E9 bleiben vollständig im Archiv.
 
 Der annotierte Git-Tag `v1.0` existiert und markiert den abgeschlossenen
 Template-/Nachprüfungsstand vor dieser späteren README-Korrektur.
+
+**Versionen.** `v1.0` ist der Abnahmestand vom 6. August 2026. `v1.0.1` ist
+die veröffentlichte Fassung mit Lizenz und Zitierdaten: Orchestrator, Gates,
+Prompts und Tests sind gegenüber `v1.0` unverändert. Hinzu kommen `LICENSE`,
+`CITATION.cff`, `.zenodo.json` und `.gitattributes`, die README-Ergänzungen
+seit `v1.0`, ein Eintrag `.claude/` in `.gitignore` und ein an den Code
+angeglichener Satz in `projektierung/SPEC-KONTRAKT.md` §6. In den
+Abnahmeberichten sind lokale Pfade und Benutzernamen für die Veröffentlichung
+neutralisiert (etwa `~/dev/…` statt des Home-Verzeichnisses); sonst sind sie
+unverändert.
 
 ## 12. FAQ
 
@@ -655,3 +806,57 @@ Abnahmekriterien, begrenzten Schleifen und prüfbarer Provenienz. Eine
 vollständige, feingranulare Funktionsinventur des v1.0-Templates steht
 in `docs/template/T5-INVENTAR.md`; die Tabellen hier beschreiben die
 übergeordneten Entwurfsentscheidungen und deren Grenzen.
+
+## 14. Erkenntnisse aus dem Einsatz
+
+Im Einsatz meldete ein Prüfmodell Arbeitspakete als erledigt, obwohl
+vorgeschriebene Prüfläufe fehlten. Seitdem genügt ein Modellurteil allein
+nie; abgeschlossen ist ein Paket erst nach bestandenen ausführbaren
+Prüfungen. In der Vorlage ist das so umgesetzt:
+
+- `orchestrator/orchestrate.sh`, Funktion `run_ms`: Ein Meilenstein endet
+  nur, wenn das Reviewer-Verdict `PASS` lautet **und** der Gate-Lauf `pass`
+  ergibt (`[ "$verdict_value" = PASS ] && [ "$gate_rc" = 0 ]`). Sonst folgen
+  die nächste Runde, der Schiedsrichter oder der Park.
+- `orchestrator/verifier.sh`: Die Gate-Skripte führt der Orchestrator selbst
+  aus und schreibt das Ergebnis nach `orchestrator/state/<MS>/gates.json`.
+  Ohne aktives Gate lautet das Ergebnis `error`, nicht `pass`.
+- `path_allowed` und `ownership_check` in `orchestrator/orchestrate.sh`:
+  Keine Modellrolle darf `orchestrator/state/**` und damit die
+  Gate-Ergebnisse schreiben.
+- `AGENTS.md`, Integritätsregel 4: „Kriterium erfüllt“ heißt, der Befehl
+  wurde ausgeführt und sein echter Output steht im Handoff oder in
+  `PROGRESS.md`.
+- Selbsttest T-8, Szenario `TERROR`: Die Reviewer-Attrappe meldet `PASS`,
+  ein Gate meldet `error`. Der Meilenstein wird nicht abgeschlossen, sondern
+  nach zwei Wiederholungen geparkt (Exit 3).
+
+## 15. Entstehung
+
+Die Vorlage ist mit agentengestützter Codeerzeugung entstanden. Commits des
+Agenten sind als solche gekennzeichnet: 19 der 20 Commits bis `7a27de2`
+tragen den Autor `Codex <codex@local>`; der übrige (`3d95ed7`) legt den
+Bericht der unabhängigen Wiederabnahme ab. Die Veröffentlichungsfassung
+1.0.1 hat Claude Code vorbereitet; ihr Commit nennt das im Vermerk
+`Co-Authored-By`.
+
+Eigenanteil von Daniel Andreas Moj: Architektur, Rollen- und
+Freigaberegeln, Prüfstrategie sowie Prüfung und Freigabe der Ergebnisse.
+Bauplan, Rework-Auftrag und Betreiberentscheide E1–E9 unter
+`docs/template/` dokumentieren diese Vorgaben.
+
+## 16. Zitieren
+
+Bitte über die Angaben in [`CITATION.cff`](CITATION.cff) zitieren; GitHub
+zeigt sie unter „Cite this repository“ an. Die DOI der Zenodo-Archivierung
+steht noch aus und wird hier nachgetragen.
+
+Moj, Daniel Andreas (2026): harness-template: Vorlage für eine
+Multi-Agenten-Entwicklungsumgebung mit ausführbaren Abnahmeprüfungen.
+Software, Version 1.0.1. https://github.com/DanielMoj/harness-template.
+DOI: noch offen.
+
+## 17. Lizenz
+
+MIT-Lizenz, siehe [`LICENSE`](LICENSE).
+Copyright (c) 2026 Daniel Andreas Moj.

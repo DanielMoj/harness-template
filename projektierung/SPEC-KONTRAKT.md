@@ -119,8 +119,10 @@ im Kriterium festgelegt; das tatsächliche Ergebnis steht später in
 
 ## 6. Vertragsänderungen und ADRs
 
-Nach Betreiberfreigabe sind Specs Reviewer-Territorium. Änderungen erfolgen
-nur mit einem ADR unter `docs/decisions/ADR-nnn-*.md`, das Kontext,
-Entscheidung und Folgen für Kriterien, Tests, Gates, Migration und Golden-
-Artefakte nennt. Ein ADR darf keine widersprüchliche Spec heimlich
-überschreiben; ein echter Widerspruch wird eskaliert.
+Nach Betreiberfreigabe ändert keine Modellrolle den Spec-Text; der
+Orchestrator verwirft solche Änderungen. Schweigt die Spec, halten Reviewer
+oder Arbiter die bindende Auslegung in einem ADR unter
+`docs/decisions/ADR-nnn-*.md` fest, das Kontext, Entscheidung und Folgen für
+Kriterien, Tests, Gates, Migration und Golden-Artefakte nennt. Ein ADR darf
+keine widersprüchliche Spec heimlich überschreiben; ein echter Widerspruch
+wird eskaliert.
