@@ -1,4 +1,4 @@
-# harness-template — Werkbank für autonome Projekte
+# harness-template: Vorlage für eine Multi-Agenten-Entwicklungsumgebung mit ausführbaren Abnahmeprüfungen
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23352917.svg)](https://doi.org/10.5281/zenodo.23352917)
 
@@ -98,7 +98,7 @@ Template vorhanden.
 1. [Rollen und Territorien](#1-rollen-und-territorien)
 2. [Der Meilenstein-Zyklus](#2-der-meilenstein-zyklus)
 3. [Welche Datei macht was](#3-welche-datei-macht-was)
-4. [Neues Projekt — der vollständige Weg](#4-neues-projekt--der-vollständige-weg)
+4. [Neues Projekt: der vollständige Weg](#4-neues-projekt-der-vollständige-weg)
 5. [Vorhandenes Material einbringen](#5-vorhandenes-material-einbringen)
 6. [Konfiguration](#6-konfiguration)
 7. [Gates](#7-gates)
@@ -126,8 +126,8 @@ Die tatsächlich erzwungene Zuordnung steht in
 | **Builder** | je nach Phase `orchestrator/handoff/<MS>/`; in Build/Rework/Rebuild außerdem `src/**`, `tools/**`, `tests/unit/**`, `tests/properties/**`, `public/assets/**`, `contracts/api/**`, `PROGRESS.md`, `docs/decisions/**`, unterstützte Paketmanifeste und konfigurierte Zusatzpfade | Abnahmetests, Specs, fremde Handoffs und `orchestrator/**` außerhalb der ausdrücklich erlaubten Handoff-Dateien | nein |
 | **Reviewer** | `tests/acceptance/**`, `reference/anchors/**`, `orchestrator/handoff/<MS>/**`, `IMPLEMENTATION-RULES.md`, `contracts/PROTOCOLS.md`, `BACKLOG.md`, `docs/decisions/**` sowie konfigurierte Zusatzpfade; die genaue Menge hängt von der Phase ab | Builder-Nutzlast | `PASS`, `REWORK` oder `ESCALATE` |
 | **QA / Red Team** | `tests/e2e/**`, `tests/fuzz/**`, `orchestrator/handoff/<MS>/QA.md`, `BACKLOG.md` sowie konfigurierte Zusatzpfade | alle anderen Pfade | kein Verdict; jeder Befund braucht einen reproduzierbaren Test |
-| **Orchestrator** | `orchestrator/state/**`, `orchestrator/logs/**`, maschinelle Handoffs/Eskalationen, `STATUS.md`, Phasencommits und Tags | — | Gate-Ergebnisse, Territorien und Ablaufzustand |
-| **Betreiber** | Intake und Freigaben, `orchestrator/config.env`, `orchestrator/secrets.env`, `toolchain.json`, Gate-Auswahl und `orchestrator/**` | — | Projektverfassung und Human-Eskalationen |
+| **Orchestrator** | `orchestrator/state/**`, `orchestrator/logs/**`, maschinelle Handoffs/Eskalationen, `STATUS.md`, Phasencommits und Tags | – | Gate-Ergebnisse, Territorien und Ablaufzustand |
+| **Betreiber** | Intake und Freigaben, `orchestrator/config.env`, `orchestrator/secrets.env`, `toolchain.json`, Gate-Auswahl und `orchestrator/**` | – | Projektverfassung und Human-Eskalationen |
 
 Nach jedem Modellversuch prüft der Orchestrator getrackte und ungetrackte
 Änderungen, auch an ignorierten Pfaden. Frühere Dateien unter
@@ -333,15 +333,15 @@ vorhanden ist.
 gehören zur Template-Abnahme, nicht zu den späteren Produkttests eines
 Zielprojekts.
 
-## 4. Neues Projekt — der vollständige Weg
+## 4. Neues Projekt: der vollständige Weg
 
-**Schritt 0 · Besprechen.** Das Destillat wird gegen
+**Schritt 0: Besprechen.** Das Destillat wird gegen
 `projektierung/INTAKE-CHECKLISTE.md` geführt. Die acht Felder sind: Vision,
 Zielgruppe/Nutzungskontext, Out-of-Scope, Stack/Format samt Laufzeiten,
 messbarer Qualitätsmaßstab je Kernfeature, Quellen/Originale, Risiken und
 offene Fragen sowie Rollen/Budget.
 
-**Schritt 1 · Projektieren.** Gib das Destillat zusammen mit
+**Schritt 1: Projektieren.** Gib das Destillat zusammen mit
 `projektierung/PROJEKTIERUNG.md`,
 `projektierung/INTAKE-CHECKLISTE.md`,
 `projektierung/SPEC-KONTRAKT.md` und genau einem passenden
@@ -350,11 +350,11 @@ Lücken soll die Session stoppen und gesammelt nachfragen. Entschiedenes
 wandert in die Spec, offen Erwogenes in den Katalog, Verworfenes in
 Out-of-Scope.
 
-**Schritt 2 · Redigieren.** Lies zuerst die erzeugte
+**Schritt 2: Redigieren.** Lies zuerst die erzeugte
 Projektierungs-Ausgabe `OFFENE-PUNKTE.md`, dann Specs und Kriterien. Erst die
 Betreiberfreigabe verleiht Spec-Rang.
 
-**Schritt 3 · Klonen und Ausgaben einsetzen.** Der konfigurierte Remote
+**Schritt 3: Klonen und Ausgaben einsetzen.** Der konfigurierte Remote
 dieses Repos lautet derzeit:
 
 ```bash
@@ -378,7 +378,7 @@ nicht als fertige Projektspezifikation im neutralen Template eingecheckt.
 | `toolchain-entwurf.json` | als `toolchain.json` übernehmen |
 | `OFFENE-PUNKTE.md` | Betreiber-Arbeitsdatei; vor Freigabe abarbeiten |
 
-**Schritt 4 · Bootstrap.** `bash bootstrap.sh` erzeugt bei Bedarf
+**Schritt 4: Bootstrap.** `bash bootstrap.sh` erzeugt bei Bedarf
 `orchestrator/config.env`, `orchestrator/secrets.env`, `toolchain.json` und
 `orchestrator/milestones.json`. Es installiert beziehungsweise prüft die
 deklarierte Toolchain und das externe MCP-venv, führt MCP-Selbsttest und
@@ -386,7 +386,7 @@ Statusprüfung aus und startet standardmäßig MCP plus Cloudflare-Tunnel in
 einer tmux-Session. Danach druckt es die Connector-URL. Für einen Lauf ohne
 Server/Tunnel dient `bash bootstrap.sh --no-start`.
 
-**Schritt 5 · Konfigurieren.** Fülle `orchestrator/config.env`. Die
+**Schritt 5: Konfigurieren.** Fülle `orchestrator/config.env`. Die
 effektiven Rollenaufrufe stehen in `BUILDER_CMD`, `REVIEWER_CMD` und
 gegebenenfalls `QA_CMD`.
 
@@ -398,9 +398,9 @@ cp orchestrator/gates.d/30-tests.sh.example orchestrator/gates.d/30-tests.sh
 chmod +x orchestrator/gates.d/30-tests.sh
 ```
 
-**Schritt 6 · Vorwissen platzieren.** Siehe Abschnitt 5.
+**Schritt 6: Vorwissen platzieren.** Siehe Abschnitt 5.
 
-**Schritt 7 · Projektstand committen.** Vor dem Orchestratorstart müssen
+**Schritt 7: Projektstand committen.** Vor dem Orchestratorstart müssen
 Specs, `AGENTS.md`, `orchestrator/milestones.json`, aktivierte Gate-Skripte
 und alle anderen nicht ignorierten Projektierungs-Ausgaben in einem
 Betreiber-Commit stehen oder bewusst außerhalb des Checkouts liegen.
@@ -408,7 +408,7 @@ PREFLIGHT lehnt einen nicht sauberen Arbeitsbaum ab; die lokale
 `orchestrator/config.env`, `orchestrator/secrets.env` und `toolchain.json`
 sind davon wegen der Ignore-Regeln ausgenommen.
 
-**Schritt 8 · M0 starten.** `bash start.sh M0` und
+**Schritt 8: M0 starten.** `bash start.sh M0` und
 `bash orchestrator/orchestrate.sh M0` laufen beide im Vordergrund. Für eine
 eigene tmux-Session muss der Betreiber den Befehl selbst in tmux starten.
 M0 wird von `projektierung/PROJEKTIERUNG.md` und
@@ -417,11 +417,11 @@ Meilenstein vorgegeben; der Orchestrator besitzt dafür keinen Sonderfall.
 Ohne Ziel-ID verarbeitet `bash start.sh` die Queue nur bis zur Grenze von
 `MAX_MS_PER_RUN`.
 
-**Schritt 9 · Beobachten.** Konfiguriere `NOTIFY_URL`; richte den Watchdog
+**Schritt 9: Beobachten.** Konfiguriere `NOTIFY_URL`; richte den Watchdog
 separat nach `RUNBOOK.md` als Cronjob ein. Benachrichtigungen sind
 best-effort und hängen außerdem von `NOTIFY_ENABLED` ab.
 
-**Schritt 10 · Eingreifen mit Beleg.** Bei PARKED zuerst
+**Schritt 10: Eingreifen mit Beleg.** Bei PARKED zuerst
 `orchestrator/ESCALATION-<MS>.md`, Handoff und Gate-Logs lesen. Nach Behebung
 der Ursache den Laufzeitmarker `orchestrator/state/<MS>/parked` gezielt
 entfernen und neu starten. `touch orchestrator/STOP` führt vor der nächsten
