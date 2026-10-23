@@ -8,8 +8,10 @@
    beheben; keine Tests, Gates oder Schwellen abschwächen.
 3. Bei einer Spec-Entscheidung ein ADR beziehungsweise eine freigegebene
    Spec-Änderung schreiben.
-4. Den Parkmarker gezielt entfernen:
-   `rm orchestrator/state/<MS>/parked`.
+4. Den Parkmarker gezielt entfernen und die Entfernung committen:
+   `git rm orchestrator/state/<MS>/parked && git commit -m "betreiber: <MS> fortsetzen"`.
+   Der Marker ist versioniert; nach einem bloßen `rm` gilt der Arbeitsbaum
+   als unsauber, und der PREFLIGHT bricht mit FATAL ab.
 5. `bash start.sh <MS>`; offene `deps` bleiben weiterhin gesperrt.
 
 ## Arbiter meldet HUMAN
@@ -30,6 +32,15 @@ Die letzte `FATAL`-Zeile in `orchestrator/logs/orchestrate.log`,
 - verbotenes Muster im Rollenkommando (die FATAL-Zeile nennt es, etwa
   `--approval-mode yolo` oder `resume`),
 - QA-Routenprobe gescheitert (Abschnitt unten),
+- `Verdict fehlt`, `Verdict veraltet` oder `Verdict passt nicht zur Runde`:
+  Die Review-Phase hat kein Verdict der laufenden Runde geschrieben. Ein
+  liegengebliebenes Verdict einer früheren Runde entscheidet nie über neuen
+  Code. Zuerst das Reviewer-Log der genannten Runde lesen
+  (`orchestrator/logs/<MS>-30-plan-review-r<N>-*.log` beziehungsweise
+  `<MS>-50-code-review-r<N>-*.log`). Danach den in der Meldung genannten
+  Phasenmarker mit `git rm` entfernen, committen und neu starten; die
+  Review-Phase läuft dann in derselben Runde erneut. Ein bloßes `rm` genügt
+  nicht, weil der Marker versioniert ist,
 - wiederholter Transport- oder Territoriumsfehler,
 - Doppelstart/aktiver Lock.
 

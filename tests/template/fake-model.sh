@@ -100,9 +100,12 @@ case "$PHASE" in
     [ "$ROLE" = reviewer ] || exit 2
     printf '# PLAN-REVIEW %s r%s\n\nKeine blocking-Befunde.\n' "$MS" "$ROUND" \
       > "$HANDOFF/PLAN-REVIEW.md"
-    json_to_file "$HANDOFF/verdict-plan.json" \
-      --arg ms "$MS" --argjson round "$ROUND" \
-      '{milestone:$ms,phase:"plan",round:$round,verdict:"PASS",blocking:[],nonblocking:[]}'
+    # missing-plan: Review-Phase endet mit Exit 0, schreibt aber kein Verdict.
+    if [ "${ACCEPTANCE_STALE_VERDICT_PROBE:-}" != missing-plan ]; then
+      json_to_file "$HANDOFF/verdict-plan.json" \
+        --arg ms "$MS" --argjson round "$ROUND" \
+        '{milestone:$ms,phase:"plan",round:$round,verdict:"PASS",blocking:[],nonblocking:[]}'
+    fi
     ;;
   40-build)
     [ "$ROLE" = builder ] || exit 2
@@ -129,8 +132,17 @@ case "$PHASE" in
     ;;
   50-code-review)
     [ "$ROLE" = reviewer ] || exit 2
+    if [ "${ACCEPTANCE_STALE_VERDICT_PROBE:-}" = code ] && [ "$ROUND" -ge 2 ]; then
+      # Ab Runde 2 kein neues Verdict: Das PASS aus Runde 1 bleibt liegen.
+      printf '# REVIEW %s r%s\n\nKein neues Verdict (absichtliche Probe).\n' "$MS" "$ROUND" \
+        > "$HANDOFF/REVIEW.md"
+      echo "fake-model: role=$ROLE phase=$PHASE milestone=$MS round=$ROUND scenario=${ACCEPTANCE_SCENARIO:-unset} args=$*"
+      exit 0
+    fi
     gate_result="$(jq -r '.result' "$ORCH/state/$MS/gates.json")"
-    if [ "$gate_result" = pass ] || [ "${ACCEPTANCE_SCENARIO:-}" = TERROR ]; then
+    # code: In Runde 1 übersieht der Reviewer das rote Gate und gibt PASS.
+    if [ "$gate_result" = pass ] || [ "${ACCEPTANCE_SCENARIO:-}" = TERROR ] \
+        || [ "${ACCEPTANCE_STALE_VERDICT_PROBE:-}" = code ]; then
       printf '# REVIEW %s r%s\n\nGates sind gruen; keine blocking-Befunde.\n' "$MS" "$ROUND" \
         > "$HANDOFF/REVIEW.md"
       json_to_file "$HANDOFF/verdict-code.json" \

@@ -132,6 +132,55 @@ EOF
 allowed_qa_mode_case gemini-auto-edit auto_edit
 allowed_qa_mode_case qwen-auto-edit auto-edit
 
+# Verdicts gelten nur in ihrer Runde. Die Reviewer-Attrappe übersieht in Runde 1 das rote
+# Gate (PASS) und schreibt in Runde 2, nach dem Rework, kein Verdict. Ohne Rundenprüfung
+# schlösse das liegengebliebene PASS den Meilenstein über ungeprüftem Rework-Code ab.
+stale_verdict_case() {
+  local name="$1" probe="$2" repo
+  repo="$CASE_ROOT/$name/repo"
+  mkdir -p "$(dirname "$repo")"
+  prepare_orchestrator_case T2 "$repo"
+  sed -i "s/^REVIEWER_ENV_ALLOWLIST='\(.*\)'\$/REVIEWER_ENV_ALLOWLIST='\1 ACCEPTANCE_STALE_VERDICT_PROBE'/" \
+    "$repo/orchestrator/config.env"
+  printf '\nACCEPTANCE_STALE_VERDICT_PROBE=%s\n' "$probe" >> "$repo/orchestrator/config.env"
+  run_orchestrator "$repo" "$CASE_ROOT/$name.log" env
+  [ "$LAST_RC" = 2 ] || { echo "T-7 FAIL: $name rc=$LAST_RC" >&2; return 1; }
+  (
+    cd "$repo"
+    test ! -e orchestrator/state/M0/8-done.done
+    ! git rev-parse -q --verify refs/tags/done/M0 >/dev/null
+    jq -e '.phase=="fatal" and .exit==2 and .needs_human==true' orchestrator/state/summary.json >/dev/null
+    test ! -e orchestrator/.lock
+  )
+}
+stale_verdict_case stale-verdict code
+grep -F 'FATAL: Verdict veraltet: orchestrator/handoff/M0/verdict-code.json stammt aus Runde 1, erwartet Runde 2; die Review-Phase hat kein neues Verdict geschrieben.' \
+  "$CASE_ROOT/stale-verdict.log" >/dev/null
+grep -F 'git rm orchestrator/state/M0/code-review-r2-infra0.done, committen und neu starten' \
+  "$CASE_ROOT/stale-verdict.log" >/dev/null
+(
+  # Runde 2 war grün; nur das neue Verdict fehlte, das alte PASS hätte den Ausschlag gegeben.
+  cd "$CASE_ROOT/stale-verdict/repo"
+  git log --format=%s | grep -Fx 'orch(M0): gates r2 (rc=0)' >/dev/null
+  jq -e '.round==2 and .result=="pass"' orchestrator/state/M0/gates.json >/dev/null
+  jq -e '.round==1 and .verdict=="PASS"' orchestrator/handoff/M0/verdict-code.json >/dev/null
+  # Wiederanlauf wie in der Meldung: Marker per git rm entfernen, committen, neu starten.
+  sed -i 's/^ACCEPTANCE_STALE_VERDICT_PROBE=code$/ACCEPTANCE_STALE_VERDICT_PROBE=/' orchestrator/config.env
+  git rm -q orchestrator/state/M0/code-review-r2-infra0.done
+  git commit -qm 'betreiber: Review M0 r2 wiederholen'
+)
+run_orchestrator "$CASE_ROOT/stale-verdict/repo" "$CASE_ROOT/stale-verdict-resume.log" env
+[ "$LAST_RC" = 0 ] || { echo "T-7 FAIL: Wiederanlauf nach veraltetem Verdict rc=$LAST_RC" >&2; exit 1; }
+(
+  cd "$CASE_ROOT/stale-verdict/repo"
+  jq -e '.round==2 and .verdict=="PASS"' orchestrator/handoff/M0/verdict-code.json >/dev/null
+  git rev-parse -q --verify refs/tags/done/M0 >/dev/null
+)
+stale_verdict_case missing-verdict missing-plan
+grep -F 'FATAL: Verdict fehlt: orchestrator/handoff/M0/verdict-plan.json (erwartet: Runde 1). Nach Sichtung des Reviewer-Logs git rm orchestrator/state/M0/plan-r1-reviewed.done, committen' \
+  "$CASE_ROOT/missing-verdict.log" >/dev/null
+test ! -e "$CASE_ROOT/missing-verdict/repo/orchestrator/state/M0/3-plan-approved.done"
+
 EMPTY_GUARD_REPO="$CASE_ROOT/empty-guard/repo"
 mkdir -p "$(dirname "$EMPTY_GUARD_REPO")"
 prepare_orchestrator_case T2 "$EMPTY_GUARD_REPO"
@@ -263,6 +312,7 @@ for evidence_file in \
   ban-gemini-yolo-eq.log ban-gemini-yolo-space.log ban-codex-bypass.log ban-codex-bypass-generic.log \
   ban-qwen-auto.log ban-claude-allow-skip.log ban-claude-auto.log ban-codex-approve-for-me.log \
   ban-codex-resume.log ban-gemini-session-file.log \
+  stale-verdict.log missing-verdict.log \
   empty-guard.log guards-off.log \
   missing-prompt.log criteria.log cycle.log qa-bound.log deps.log \
   identity.log bootstrap-identity.log; do
@@ -273,4 +323,4 @@ for evidence_file in allow-gemini-auto-edit.log allow-qwen-auto-edit.log; do
   printf 'T-7 evidence %s: ' "$evidence_file"
   grep -m1 -F 'QA-Routenprobe bestanden' "$CASE_ROOT/$evidence_file"
 done
-echo 'T-7 PASS: hidden-territory=rollback logs=hash-protected env=allowlisted flags=expanded ban-list=yolo,bypass,auto,resume safe-edit-modes=auto_edit,auto-edit guards=explicit preflight=contracts manifest=cycle qa-bound=validated deps=FATAL identity=FATAL preset-hooks=accepted'
+echo 'T-7 PASS: hidden-territory=rollback logs=hash-protected env=allowlisted flags=expanded ban-list=yolo,bypass,auto,resume safe-edit-modes=auto_edit,auto-edit verdict-round=stale,missing=FATAL resume=git-rm guards=explicit preflight=contracts manifest=cycle qa-bound=validated deps=FATAL identity=FATAL preset-hooks=accepted'

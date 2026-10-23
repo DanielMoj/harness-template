@@ -27,6 +27,9 @@ set -e
   test -f orchestrator/state/M0/parked
   test -f orchestrator/ESCALATION-M0.md
   test -f orchestrator/ESCALATION.md
+  # Der Parkmarker ist versioniert; Fortsetzen verlangt git rm und einen Commit.
+  grep -F 'git rm orchestrator/state/M0/parked`, committen und neu starten' orchestrator/ESCALATION-M0.md >/dev/null
+  git ls-files --error-unmatch orchestrator/state/M0/parked >/dev/null
   test "$(cat orchestrator/state/M0/round)" = 4
   jq -e '.verdict=="HUMAN" and .phase=="code" and .round==4' \
     orchestrator/handoff/M0/verdict-arbiter.json >/dev/null
@@ -44,4 +47,4 @@ set -e
 grep -F 'REBUILD M0' "$RUN_LOG" >/dev/null
 grep -F 'PARKED M0' "$RUN_LOG" >/dev/null
 grep -Fx parked "$NOTIFY_LOG" >/dev/null
-echo 'T-3 PASS: rebuild=r4 arbiter=HUMAN arbiter-effort=reviewer-cmd parked=M0 escalation=present exit=3'
+echo 'T-3 PASS: rebuild=r4 arbiter=HUMAN arbiter-effort=reviewer-cmd parked=M0 escalation=present,resume=git-rm exit=3'

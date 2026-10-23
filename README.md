@@ -65,9 +65,9 @@ fest.
 
 ---
 
-Stand **v1.1.0**: Umbau der Fassung 1.0.1 für R-Pakete, das Einsetzen in
-bestehende Repos und eine geprüfte Konfiguration für drei Modellanbieter
-(Abschnitt 11). Bauplan, zwei anfängliche adversarielle Prüfberichte, Rework
+Stand **v1.1.1**: Umbau der Fassung 1.0.1 für R-Pakete, das Einsetzen in
+bestehende Repos und eine geprüfte Konfiguration für drei Modellanbieter,
+dazu die Rundenbindung der Verdicts (Abschnitt 11). Bauplan, zwei anfängliche adversarielle Prüfberichte, Rework
 und Nachprüfungen des Abnahmestands `v1.0` liegen unter `docs/template/`.
 
 Dieses Template orchestriert drei getrennte Rollen: Ein **Builder** baut,
@@ -230,6 +230,12 @@ Fälle landen beim Betreiber.
 - **PLAN/PLAN-REVIEW** verhandeln über stabile Einwand-IDs. Der Default sind
   höchstens zwei Planrunden (`MAX_ROUNDS_PLAN=2`); die Konfiguration kann den
   Wert ändern.
+- **Verdicts** gelten nur für ihre Runde: Nach PLAN-REVIEW und CODE-REVIEW
+  liest der Orchestrator `verdict-plan.json` beziehungsweise
+  `verdict-code.json` nur, wenn `round` der laufenden Runde entspricht. Fehlt
+  das Verdict oder stammt es aus einer früheren Runde, endet der Lauf mit
+  FATAL; ein liegengebliebenes Verdict entscheidet nie über neuen Code
+  (RUNBOOK, FATAL).
 - **GATES** führt alle ausführbaren Dateien mit dem Muster
   `orchestrator/gates.d/NN-*.sh` aus und schreibt den Laufzeitpfad
   `orchestrator/state/<MS>/gates.json`. Ohne aktives Gate lautet das Ergebnis
@@ -246,7 +252,8 @@ Fälle landen beim Betreiber.
 - **PARK & CONTINUE** schreibt
   `orchestrator/ESCALATION-<MS>.md`, `orchestrator/ESCALATION.md` und den
   Laufzeitmarker `orchestrator/state/<MS>/parked`. Danach werden weitere
-  Meilensteine mit erfüllten Abhängigkeiten geprüft.
+  Meilensteine mit erfüllten Abhängigkeiten geprüft. Der Marker wird mit dem
+  Park-Commit versioniert.
 - **DONE** verlangt zusätzlich, dass `PROGRESS.md` seit `plan/<MS>` geändert
   wurde, und erzeugt den unveränderlich behandelten Tag `done/<MS>`.
 
@@ -445,8 +452,10 @@ best-effort und hängen außerdem von `NOTIFY_ENABLED` ab.
 
 **Schritt 10: Eingreifen mit Beleg.** Bei PARKED zuerst
 `orchestrator/ESCALATION-<MS>.md`, Handoff und Gate-Logs lesen. Nach Behebung
-der Ursache den Laufzeitmarker `orchestrator/state/<MS>/parked` gezielt
-entfernen und neu starten. `touch orchestrator/STOP` führt vor der nächsten
+der Ursache den Laufzeitmarker mit
+`git rm orchestrator/state/<MS>/parked` entfernen, committen und neu starten;
+nach einem bloßen `rm` lehnt der PREFLIGHT den Arbeitsbaum als unsauber ab.
+`touch orchestrator/STOP` führt vor der nächsten
 geprüften Phase zu FATAL/Exit 2; anschließend muss die STOP-Datei für die
 Wiederaufnahme entfernt werden.
 
@@ -792,12 +801,12 @@ unter `/tmp` und fährt die echte Orchestrator-/Gate-/Statuslogik mit
 |---|---|
 | T-1 | Bootstrap zweimal, Statusvertrag, externe MCP-Umgebung, bekannte Secret-Migration; der öffentliche Tunnel bleibt dabei deaktiviert |
 | T-2 | zwei Meilensteine, rote Gates, Rework, Transport- und Territoriums-Retry, Commits und Tags |
-| T-3 | Rebuild ab Runde 4, Arbiter `HUMAN`, PARKED und Exit 3 |
+| T-3 | Rebuild ab Runde 4, Arbiter `HUMAN` mit derselben Effort-Stufe wie der Reviewer, PARKED mit Fortsetzungshinweis `git rm` und Exit 3 |
 | T-4 | Notify, Watchdog, Doppelstart, fremdbefüllter Lock und Statuspräzedenz |
 | MCP-Allowlist | aktuell 72 positive, negative, Struktur-, grep- und Symlink-Fälle |
 | T-5B / T-5 | sechs ausgeführte Verhaltensnachweise und Vollinventar gegen `docs/template/T5-SOLL.md` |
 | T-6 | aktive QA, QA-Park, protokollierte strikte QA-Routenprobe (FATAL bei stiller Modus-Rückstufung), acht Fortschritte mit Autonomiestufe 0 und ziffernlose IDs |
-| T-7 | Territorien, Logschutz, Rollen-Umgebung, Flag-/Guard-Prüfung mit allen Mustern der Verbotslisten (Negativfälle) und `auto_edit`/`auto-edit` samt Routenprobe (Positivfälle), Vertrags- und Manifestfehler |
+| T-7 | Territorien, Logschutz, Rollen-Umgebung, Flag-/Guard-Prüfung mit allen Mustern der Verbotslisten (Negativfälle) und `auto_edit`/`auto-edit` samt Routenprobe (Positivfälle), veraltetes und fehlendes Verdict als FATAL samt Wiederanlauf, Vertrags- und Manifestfehler |
 | T-8 | Gate-error/fail, Mutation-Ratchet, Trace, Golden-ADR und Territory-Marker |
 | T-9 | `tools/install-into.sh`: Projektdateien unberührt, Zusammenführen von `.gitignore`, `.gitattributes` und `.Rbuildignore`, `reference/quellen/` ignoriert, Katalog, docs/pkgdown-Konfliktbericht, Probelauf, Wiederholung, Modi 100755 bei `core.filemode=false` und im frischen Klon |
 | T-10 | Preset `r-paket`: Einsetzen per Installer, die markierten Preset-Blöcke unverändert, M0 mit Attrappen bis DONE, deps/lint/tests/trace/territory/mutgate/golden-adr grün, `R/` unverändert, danach echter muttest-Lauf gegen `86-mutgate`; ohne R „übersprungen: R fehlt“, nie PASS |
@@ -872,6 +881,16 @@ Selbsttests T-9 und T-10 sowie Ergänzungen in T-3, T-6 und T-7. Die
 temporären Test-Repos übernehmen die Dateimodi jetzt aus dem Git-Index.
 Keine bestehende Prüfung und keine Schwelle wurde abgeschwächt; Ausführung und
 Messwerte stehen in `PROGRESS.md`.
+
+`v1.1.1` (23. Oktober 2026) schließt eine Lücke in `verdict()`: Das Verdict
+muss aus der laufenden Runde stammen. Bis 1.1.0 las der Orchestrator ein
+liegengebliebenes Verdict einer früheren Runde, wenn eine Review-Phase kein
+neues schrieb; ein altes PASS konnte so einen Meilenstein über ungeprüftem
+Rework-Code abschließen. Ein fehlendes oder älteres Verdict ist jetzt FATAL,
+und die Meldung erscheint auf der Konsole. Die Fortsetzungshinweise für
+versionierte Phasen- und Parkmarker nennen `git rm` und einen Commit. Prompts
+30 und 50, `SCHEMA.md` und `contracts/PROTOCOLS.md` verlangen
+`"round": <laufende Runde>`. Belege in `PROGRESS.md`.
 
 ## 12. FAQ
 
@@ -999,8 +1018,8 @@ tragen den Autor `Codex <codex@local>`; der übrige (`3d95ed7`) legt den
 Bericht der unabhängigen Wiederabnahme ab. Die Veröffentlichungsfassung
 1.0.1 hat Claude Code vorbereitet; die Commits dazu nennen das im Vermerk
 `Co-Authored-By`. Den Umbau zu 1.1.0 hat Claude Code mit Claude Opus 5.5 nach
-dem Umbau-Auftrag des Betreibers ausgeführt; auch dieser Commit trägt den
-Vermerk.
+dem Umbau-Auftrag des Betreibers ausgeführt, ebenso die Korrektur 1.1.1;
+auch diese Commits tragen den Vermerk.
 
 Eigenanteil von Daniel Andreas Moj: Architektur, Rollen-, Rechte- und
 Eskalationsregeln, Prüfstrategie sowie Prüfung und Freigabe der Ergebnisse.
@@ -1011,7 +1030,7 @@ Bauplan, Rework-Auftrag und Betreiberentscheide E1–E9 unter
 
 Bitte über die Angaben in [`CITATION.cff`](CITATION.cff) zitieren; GitHub
 zeigt sie unter „Cite this repository“ an. Die Fassung 1.0.1 ist bei Zenodo
-archiviert; eine eigene DOI für 1.1.0 vergibt Zenodo erst mit deren
+archiviert; eine eigene DOI für 1.1.0 und 1.1.1 vergibt Zenodo erst mit deren
 Archivierung, bis dahin führt die Konzept-DOI zur neuesten archivierten
 Fassung:
 
@@ -1021,7 +1040,7 @@ Fassung:
 
 Moj, Daniel Andreas (2026): harness-template: Vorlage für eine
 Multi-Agenten-Entwicklungsumgebung mit ausführbaren Abnahmeprüfungen.
-Software, Version 1.1.0. Zenodo. https://doi.org/10.5281/zenodo.23352917.
+Software, Version 1.1.1. Zenodo. https://doi.org/10.5281/zenodo.23352917.
 
 ## 17. Lizenz
 

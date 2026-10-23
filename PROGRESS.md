@@ -1,5 +1,108 @@
 # PROGRESS — Langzeitgedächtnis des Builders
 
+## Nachtrag 1.1.1 — 2026-10-23
+
+Auftrag des Betreibers: Lücke in `verdict()` schließen; das Verdict muss aus
+der aktuellen Runde stammen, ein fehlendes oder älteres Verdict ist FATAL mit
+klarer Meldung; Testfall in T-7, Suite grün, Commit, Tag `v1.1.1`, Push.
+
+### Änderungen
+
+- `verdict()` in `orchestrator/orchestrate.sh` erhält Runde und Phasenmarker
+  und prüft `.round` gegen die laufende Runde: `Verdict fehlt`,
+  `Verdict veraltet` (Runde kleiner) oder `Verdict passt nicht zur Runde`
+  (andere Runde) enden mit FATAL. Die Meldung nennt Datei, gefundene und
+  erwartete Runde sowie den Wiederanlauf.
+- `verdict()` lief bisher in einer Befehlsersetzung; die FATAL-Zeile ging
+  dadurch in die Variable statt auf die Konsole (nur `orchestrate.log` und
+  der Status zeigten sie). Das Ergebnis steht jetzt in `VERDICT_VALUE`, wie
+  bei `EXPANDED_ROLE_CMD` und `LAST_GATE_RC`; `fatal` läuft in der Hauptshell.
+- Beim Prüfen des Wiederanlaufs gefunden: Phasen- und Parkmarker sind
+  versioniert. Ein bloßes `rm` lässt den Arbeitsbaum unsauber, der PREFLIGHT
+  bricht ab. Die Verdict-Meldung, der Fortsetzungstext in
+  `ESCALATION-<MS>.md` (`park()`), RUNBOOK und README nennen deshalb
+  `git rm` und einen Commit.
+- Prompts 30 und 50, `orchestrator/handoff/SCHEMA.md` und
+  `contracts/PROTOCOLS.md` verlangen `"round": <laufende Runde>`.
+- T-7: Die Reviewer-Attrappe gibt in Runde 1 trotz rotem Gate PASS und
+  schreibt in Runde 2 kein Verdict → FATAL `Verdict veraltet`; danach
+  Wiederanlauf nach der Meldung (`git rm` des Markers, Commit) → frisches
+  Verdict der Runde 2, M0 fertig. Zweiter Fall: Plan-Review ohne Verdict →
+  FATAL `Verdict fehlt`. T-3 prüft den Fortsetzungstext mit `git rm`.
+- Grenze: Innerhalb einer Runde unterscheidet die Prüfung die
+  Infrastruktur-Wiederholungen der Gates nicht; zwischen ihnen ändert sich der
+  Code nicht, es laufen nur die Gates erneut.
+
+### Belege
+
+Rot-Probe: dasselbe Szenario gegen `orchestrator/orchestrate.sh` aus `HEAD`
+(v1.1.0), Attrappe mit der neuen Probe:
+
+```text
+alt: rc=0
+[20261023-223154] RUN reviewer 50-code-review (M0 r1, Versuch 1)
+[20261023-223155] RUN reviewer 50-code-review (M0 r2, Versuch 1)
+[20261023-223156] === M0 DONE ===
+alt: verdict-code.json M0 = {"round":1,"verdict":"PASS"}
+alt: Tag done/M0 = vorhanden
+alt: Review-Log r2 = fake-model: role=reviewer phase=50-code-review milestone=M0 round=2 scenario=T2 args=reviewer --fixture-safe
+```
+
+Wiederanlauf nach `Verdict veraltet` (neuer Orchestrator):
+
+```text
+1) Lauf mit Probe:
+rc=2 FATAL: Verdict veraltet: orchestrator/handoff/M0/verdict-code.json stammt aus Runde 1, erwartet R
+2) nur rm, Probe aus:
+rc=2 FATAL: Arbeitsbaum vor Lauf nicht sauber: orchestrator/state/M0/code-review-r2-infra0.done
+3) git rm + Commit:
+rc=0 === M0 DONE ===
+{"round":2,"verdict":"PASS"}
+```
+
+Entparken nach bisherigem RUNBOOK (`rm orchestrator/state/<MS>/parked`):
+
+```text
+1) Park:
+rc=3
+   parked versioniert: orchestrator/state/setup/parked
+2) nur rm:
+rc=2 FATAL: Arbeitsbaum vor Lauf nicht sauber: orchestrator/state/setup/parked
+```
+
+```text
+$ bash tests/template/run-all.sh   # Start 2026-10-23 22:33:34 CEST; Auszug: Abschnittsköpfe, Ergebnis- und Belegzeilen
+===== test-t1-bootstrap.sh =====
+T-1 PASS: bootstrap=2 summary=contract-v1 repo-env=absent mcp-manifest=pinned secrets=isolated tunnel=0
+===== test-t2-rework.sh =====
+T-2 PASS: milestones=2 gates=2 red=1 rework=1 transport-retry=1 territory-retry=1 done=2 exit=0
+===== test-t3-ladder.sh =====
+T-3 PASS: rebuild=r4 arbiter=HUMAN arbiter-effort=reviewer-cmd parked=M0 escalation=present,resume=git-rm exit=3
+===== test-t4-ops.sh =====
+T-4 PASS: notify=DONE,PARKED watchdog=STALE double-start=isolated foreign-lock=FATAL status-precedence=parked watchdog-exit=1
+===== ../../orchestrator/mcp/tests/test_allowlist.py =====
+test_allowlist: 72/72 OK
+===== test-t6-qa-autonomy.sh =====
+T-6 PASS: qa=active qa-park=pre-round qa-probe=logged,strict-FATAL autonomy0=8-distinct-phases digit-free-ids=2
+===== test-t7-integrity.sh =====
+T-7 evidence stale-verdict.log: [20261023-223447] FATAL: Verdict veraltet: orchestrator/handoff/M0/verdict-code.json stammt aus Runde 1, erwartet Runde 2; die Review-Phase hat kein neues Verdict geschrieben. Nach Sichtung des Reviewer-Logs git rm orchestrator/state/M0/code-review-r2-infra0.done, committen und neu starten; die Review-Phase läuft dann erneut.
+T-7 evidence missing-verdict.log: [20261023-223454] FATAL: Verdict fehlt: orchestrator/handoff/M0/verdict-plan.json (erwartet: Runde 1). Nach Sichtung des Reviewer-Logs git rm orchestrator/state/M0/plan-r1-reviewed.done, committen und neu starten; die Review-Phase läuft dann erneut.
+T-7 PASS: hidden-territory=rollback logs=hash-protected env=allowlisted flags=expanded ban-list=yolo,bypass,auto,resume safe-edit-modes=auto_edit,auto-edit verdict-round=stale,missing=FATAL resume=git-rm guards=explicit preflight=contracts manifest=cycle qa-bound=validated deps=FATAL identity=FATAL preset-hooks=accepted
+===== test-t8-gates.sh =====
+T-8 PASS: gate-error=2-retries-no-round rc5=fail mutgate=pass,ratchet-fail,error trace=pass golden-adr=fail,pass territory-marker=current
+===== test-t9-install.sh =====
+T-9 PASS: project-files=untouched merge=gitignore,gitattributes,Rbuildignore quellen=ignored katalog=versioned exec-bits=100755(filemode=false) fresh-clone=executable docs-conflict=reported dry-run=no-change idempotent=yes dirty=FATAL
+===== test-t10-r-paket.sh =====
+T-10 PASS: install=tools/install-into.sh preset-blocks=config-env,toolchain m0=done gates=deps,lint,tests,trace,territory,mutgate,golden-adr R/=unchanged rbuildignore=complete mutation=muttest,score=83.33,fail@90,pass@65
+===== test-t5-behavior.sh =====
+T-5B PASS: territory-enforcement flag-ban sandbox-guard lock-orphan qa-park mcp-allowlist executed
+===== test-t5-inventory.py =====
+T-5 PASS: target=versioned rows=112 static=101 behavior=6 omitted=5 categories=ORCH=12,AGENT=5,D12=64,PATCH=15,D14=7,NEW=9 exact-ids=PASS cross-file=PASS
+A6 PASS: T-1 T-2 T-3 T-4 MCP-Allowlist T-5B T-5 T-6 T-7 T-8 T-9 T-10
+real	2m0.352s
+(Exit 0)
+```
+
 ## Umbau 1.1.0 — 2026-10-23
 
 Auftrag: `04_Auftrag_Harness_Umbau.md`, Abschnitte A bis H; QA Weg A mit
@@ -267,7 +370,7 @@ Gegenprobe T-10 ohne R (`env -i PATH=<nur dirname und bash>`):
   senken, ohne die Prüfung abzuschwächen. Nicht Teil dieses Auftrags.
 - Beobachtung außerhalb des Auftrags: `verdict()` prüft das Feld `round`
   nicht gegen die laufende Runde; schreibt ein Reviewer-Lauf kein neues
-  Verdict, liest der Orchestrator das der Vorrunde.
+  Verdict, liest der Orchestrator das der Vorrunde. Behoben in 1.1.1.
 - Zenodo vergibt die DOI für 1.1.0 erst mit der Archivierung (GitHub-Release);
   danach `CITATION.cff` und README Abschnitt 16 nachtragen.
 - Die Probeaufrufe der echten CLIs liegen als gewöhnliche Sitzungsdaten unter

@@ -24,6 +24,9 @@ nonblocking und wandern nötigenfalls nach `BACKLOG.md`.
 ```
 
 `verdict` ist `PASS|REWORK|ESCALATE`. PASS erfordert leeres `blocking`.
+`round` ist die Runde aus dem Prompt. Der Orchestrator nimmt nur ein Verdict
+der laufenden Runde an; fehlt es oder stammt es aus einer anderen Runde, endet
+der Lauf mit FATAL, statt ein liegengebliebenes Verdict zu verwenden.
 Jeder blocking-Eintrag hat
 `{"id":"E1","ref":"Gate, Kriterium oder Spec-Fundstelle","note":"..."}`.
 Ohne nichtleere `ref` ist der Befund definitionsgemäß nonblocking.

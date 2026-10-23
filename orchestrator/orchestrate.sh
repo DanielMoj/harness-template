@@ -32,6 +32,7 @@ declare -A OWNERSHIP_BEFORE=()
 declare -A OWNERSHIP_ARTIFACT_BEFORE=()
 declare -a OWNERSHIP_REMOVE=()
 declare -a MODEL_ENV=()
+VERDICT_VALUE=""
 
 # Neue Werte werden nur als Defaults gesetzt; config.env gewinnt einzeln.
 AUTONOMY_LEVEL="${AUTONOMY_LEVEL:-2}"
@@ -695,8 +696,10 @@ model_phase() {
 }
 
 verdict() {
-  local ms="$1" phase="$2" file="$ORCH/handoff/$1/verdict-$2.json"
-  [ -f "$file" ] || fatal "Verdict fehlt: $file"
+  local ms="$1" phase="$2" round="$3" marker="$4" file="$ORCH/handoff/$1/verdict-$2.json" rel found rerun
+  rel="${file#"$REPO_ROOT/"}"
+  rerun="Nach Sichtung des Reviewer-Logs git rm orchestrator/state/$ms/$marker.done, committen und neu starten; die Review-Phase läuft dann erneut"
+  [ -f "$file" ] || fatal "Verdict fehlt: $rel (erwartet: Runde $round). $rerun."
   jq -e --arg ms "$ms" --arg phase "$phase" '
     .milestone==$ms and .phase==$phase and
     (.round|type=="number") and
@@ -705,7 +708,15 @@ verdict() {
     all(.blocking[]?; (.id|type=="string" and length>0) and (.ref|type=="string" and length>0)) and
     (.verdict!="PASS" or (.blocking|length)==0)
   ' "$file" >/dev/null || fatal "Verdict-Schema ungültig: $file"
-  jq -r '.verdict' "$file"
+  # Ein Verdict gilt nur für seine Runde; ein liegengebliebenes darf nie über neuen Code entscheiden.
+  found="$(jq -r '.round' "$file")"
+  if ! jq -e --argjson round "$round" '.round == $round' "$file" >/dev/null; then
+    if jq -e --argjson round "$round" '.round < $round' "$file" >/dev/null; then
+      fatal "Verdict veraltet: $rel stammt aus Runde $found, erwartet Runde $round; die Review-Phase hat kein neues Verdict geschrieben. $rerun."
+    fi
+    fatal "Verdict passt nicht zur Runde: $rel nennt Runde $found, erwartet Runde $round. $rerun."
+  fi
+  VERDICT_VALUE="$(jq -r '.verdict' "$file")"
 }
 
 phase_done() { [ -f "$ORCH/state/$1/$2.done" ]; }
@@ -767,7 +778,7 @@ park() {
     echo
     echo "Handoff: \`orchestrator/handoff/$ms/\`"
     echo
-    echo "Fortsetzen: Ursache beheben, \`orchestrator/state/$ms/parked\` entfernen und neu starten."
+    echo "Fortsetzen: Ursache beheben, dann \`git rm orchestrator/state/$ms/parked\`, committen und neu starten (der Marker ist versioniert; ein bloßes rm lässt den Arbeitsbaum für den PREFLIGHT unsauber)."
   } > "$ORCH/ESCALATION-$ms.md"
   cp "$ORCH/ESCALATION-$ms.md" "$ORCH/ESCALATION.md"
   refresh_status "$reason" 3 true
@@ -907,7 +918,8 @@ run_ms() {
         model_phase reviewer 30-plan-review.md 30-plan-review "$ms" "$round" "plan-r$round-reviewed"
         if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
       fi
-      verdict_value="$(verdict "$ms" plan)"
+      verdict "$ms" plan "$round" "plan-r$round-reviewed"
+      verdict_value="$VERDICT_VALUE"
       if [ "$verdict_value" = PASS ]; then break; fi
       if [ "$verdict_value" = ESCALATE ] || [ "$round" -ge "$MAX_ROUNDS_PLAN" ]; then
         if arbiter "$ms" plan "$round"; then arb_rc=0; else arb_rc=$?; fi
@@ -991,7 +1003,8 @@ run_ms() {
       model_phase reviewer 50-code-review.md 50-code-review "$ms" "$round" "$review_marker"
       if [ "$HALT_REQUESTED" != 0 ]; then RUN_MS_RC=10; return 0; fi
     fi
-    verdict_value="$(verdict "$ms" code)"
+    verdict "$ms" code "$round" "$review_marker"
+    verdict_value="$VERDICT_VALUE"
 
     if [ "$pure_error" = 1 ]; then
       if [ "$infra_attempt" -lt "$GATE_ERROR_RETRIES" ]; then

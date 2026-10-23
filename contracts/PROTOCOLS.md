@@ -47,7 +47,8 @@ Diffs und Rebuild.
 ## 3. Verdicts und Verhandlung
 
 Verdicts folgen `orchestrator/handoff/SCHEMA.md`. `PASS` ist nur mit leerem
-`blocking` zulässig. Jeder blocking-Eintrag hat eine nichtleere `ref`.
+`blocking` zulässig. Ein Verdict gilt nur für die Runde, in der es geschrieben
+wurde; ein fehlendes oder älteres Verdict ist FATAL. Jeder blocking-Eintrag hat eine nichtleere `ref`.
 Einwände besitzen stabile IDs und werden in PLAN-UPDATE Punkt für Punkt
 beantwortet.
 
