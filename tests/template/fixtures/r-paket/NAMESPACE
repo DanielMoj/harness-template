@@ -1,0 +1,2 @@
+# Fixture: hand-written to keep the self-test free of roxygen2.
+export(clamp_add)

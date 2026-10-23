@@ -1,0 +1,13 @@
+Package: harnessfixture
+Type: Package
+Title: Fixture Package for the Harness Self-Test
+Version: 0.0.1
+Authors@R: person("Harness", "Fixture", email = "fixture@example.org",
+    role = c("aut", "cre"))
+Description: Marked fixture for the self-test of the harness template. It
+    provides a single function so that the gates of the R package preset
+    can be exercised end to end.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Suggests: testthat (>= 3.0.0)
+Config/testthat/edition: 3

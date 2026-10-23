@@ -12,6 +12,17 @@ ROLE="${1:?Aufruf: fake-model.sh builder|reviewer|qa}"
   || { echo "fake-model: PROMPT_FILE fehlt" >&2; exit 2; }
 
 PROMPT_NAME="$(basename "$PROMPT_FILE")"
+if [[ "$PROMPT_NAME" == qa-probe-* ]]; then
+  # PREFLIGHT-Routenprobe; "untrusted" ahmt die stille Rueckstufung der Gemini CLI nach.
+  if [ "${ACCEPTANCE_QA_PROBE:-ok}" = untrusted ]; then
+    echo 'Approval mode overridden to "default" because the current folder is not trusted.' >&2
+    echo 'fake-model: QA-Routenprobe ohne Schluessel abgebrochen (intentional acceptance probe)' >&2
+    exit 41
+  fi
+  echo "OK"
+  echo "fake-model: role=$ROLE phase=qa-probe args=$*"
+  exit 0
+fi
 if [[ "$PROMPT_NAME" =~ ^(.+)-(10-acceptance|20-plan|30-plan-review|40-build|45-qa|50-code-review|60-rework|62-rebuild|70-arbiter)-r([0-9]+)- ]]; then
   MS="${BASH_REMATCH[1]}"
   PHASE="${BASH_REMATCH[2]}"
@@ -64,11 +75,16 @@ case "$PHASE" in
     done < <(jq -r --arg ms "$MS" '.[] | select(.id==$ms) | .criteriaRef[]' "$ORCH/milestones.json")
     jq -n --argjson criteria "$criteria" '{criteria:$criteria,open:[]}' > "$HANDOFF/CRITERIA.json"
     mkdir -p tests/acceptance
-    ids="$(jq -r --arg ms "$MS" '.[] | select(.id==$ms) | .criteriaRef | join(", ")' "$ORCH/milestones.json")"
-    printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
-      "# Criteria: $ids" "test -s src/$MS.txt" \
-      "echo '$MS acceptance fixture: PASS'" > "tests/acceptance/$MS.sh"
-    chmod +x "tests/acceptance/$MS.sh"
+    if [ "${ACCEPTANCE_SCENARIO:-}" = TR ]; then
+      # R-Paket-Preset: der Abnahmetest des Fixture-Pakets, ausgeführt vom Test-Gate.
+      cp "$(dirname "$0")/fixtures/r-paket/tests/acceptance/test-clamp-acceptance.R" tests/acceptance/
+    else
+      ids="$(jq -r --arg ms "$MS" '.[] | select(.id==$ms) | .criteriaRef | join(", ")' "$ORCH/milestones.json")"
+      printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
+        "# Criteria: $ids" "test -s src/$MS.txt" \
+        "echo '$MS acceptance fixture: PASS'" > "tests/acceptance/$MS.sh"
+      chmod +x "tests/acceptance/$MS.sh"
+    fi
     ;;
   20-plan)
     [ "$ROLE" = builder ] || exit 2
@@ -101,8 +117,11 @@ case "$PHASE" in
       previous_prompt="$(find orchestrator/logs -maxdepth 1 -type f -name "$MS-10-acceptance-*-prompt.md" | head -n 1)"
       [ -z "$previous_prompt" ] || printf '\nFAELSCHUNG durch das Modell\n' >> "$previous_prompt"
     fi
-    mkdir -p src
-    printf 'fixture implementation for %s\n' "$MS" > "src/$MS.txt"
+    if [ "${ACCEPTANCE_SCENARIO:-}" != TR ]; then
+      # Im R-Paket-Szenario ändert M0 nichts am Paket; src/ wäre dort kompilierter Code.
+      mkdir -p src
+      printf 'fixture implementation for %s\n' "$MS" > "src/$MS.txt"
+    fi
     if [ "${ACCEPTANCE_ENV_CAPTURE:-0}" = 1 ]; then
       env | LC_ALL=C sort > src/model-env.txt
     fi
@@ -163,4 +182,4 @@ case "$PHASE" in
     ;;
 esac
 
-echo "fake-model: role=$ROLE phase=$PHASE milestone=$MS round=$ROUND scenario=${ACCEPTANCE_SCENARIO:-unset}"
+echo "fake-model: role=$ROLE phase=$PHASE milestone=$MS round=$ROUND scenario=${ACCEPTANCE_SCENARIO:-unset} args=$*"

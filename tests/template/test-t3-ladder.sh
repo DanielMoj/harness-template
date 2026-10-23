@@ -34,9 +34,14 @@ set -e
     orchestrator/state/summary.json >/dev/null
   git log --format=%s | grep -F 'orch(M0): reset builder territory for rebuild'
   git log --format=%s | grep -F 'orch(M0): reviewer 70-arbiter r4'
+  # The arbiter runs through REVIEWER_CMD and therefore gets the same effort level.
+  arbiter_log="$(find orchestrator/logs -maxdepth 1 -name 'M0-70-arbiter-r4-a1-*.log' -print -quit)"
+  grep -F 'phase=70-arbiter' "$arbiter_log" | grep -F 'args=reviewer --fixture-safe --effort max'
+  review_log="$(find orchestrator/logs -maxdepth 1 -name 'M0-50-code-review-r1-a1-*.log' -print -quit)"
+  grep -F 'args=reviewer --fixture-safe --effort max' "$review_log" >/dev/null
   jq -c '{contract,project,phase,round,needs_human,reason,parked,exit}' orchestrator/state/summary.json
 )
 grep -F 'REBUILD M0' "$RUN_LOG" >/dev/null
 grep -F 'PARKED M0' "$RUN_LOG" >/dev/null
 grep -Fx parked "$NOTIFY_LOG" >/dev/null
-echo 'T-3 PASS: rebuild=r4 arbiter=HUMAN parked=M0 escalation=present exit=3'
+echo 'T-3 PASS: rebuild=r4 arbiter=HUMAN arbiter-effort=reviewer-cmd parked=M0 escalation=present exit=3'

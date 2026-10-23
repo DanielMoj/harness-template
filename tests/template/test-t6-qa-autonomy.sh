@@ -52,6 +52,31 @@ set -e
     orchestrator/state/summary.json >/dev/null
 )
 
+PROBE_REPO="$CASE_ROOT/probe-untrusted/repo"
+mkdir -p "$(dirname "$PROBE_REPO")"
+prepare_orchestrator_case T6 "$PROBE_REPO"
+sed -i 's/^QA_PROBE_STRICT=0$/QA_PROBE_STRICT=1/' "$PROBE_REPO/orchestrator/config.env"
+sed -i "s/^QA_ENV_ALLOWLIST=.*/QA_ENV_ALLOWLIST='ACCEPTANCE_SCENARIO ACCEPTANCE_QA_PROBE'/" \
+  "$PROBE_REPO/orchestrator/config.env"
+printf '%s\n' ACCEPTANCE_QA_PROBE=untrusted QA_PROBE_RETRIES=1 QA_PROBE_SLEEP=0 \
+  >> "$PROBE_REPO/orchestrator/config.env"
+set +e
+(
+  cd "$PROBE_REPO"
+  PATH="$PROBE_REPO/tests/template/fixtures/fake-bin:$PATH" \
+    FAKE_NOTIFY_LOG="$CASE_ROOT/probe-notify.log" bash orchestrator/orchestrate.sh
+) > "$CASE_ROOT/probe-untrusted.log" 2>&1
+probe_rc=$?
+set -e
+[ "$probe_rc" = 2 ]
+grep -F 'QA-Routenprobe strict fehlgeschlagen' "$CASE_ROOT/probe-untrusted.log" >/dev/null
+grep -F 'WARN: QA-Routenprobe 1/1 fehlgeschlagen (rc=41); Ausgabe: orchestrator/logs/qa-probe-' \
+  "$CASE_ROOT/probe-untrusted.log" >/dev/null
+PROBE_LOG="$(find "$PROBE_REPO/orchestrator/logs" -maxdepth 1 -name 'qa-probe-*-1.log' -print -quit)"
+grep -F 'Approval mode overridden to "default" because the current folder is not trusted.' \
+  "$PROBE_LOG" >/dev/null
+test ! -e "$PROBE_REPO/orchestrator/state/setup/1-acceptance.done"
+
 LEVEL0_REPO="$CASE_ROOT/level0/repo"
 mkdir -p "$(dirname "$LEVEL0_REPO")"
 prepare_orchestrator_case T6 "$LEVEL0_REPO"
@@ -84,4 +109,5 @@ record_behavior qa-park
 printf 'T-6 evidence: '
 grep -m1 -F 'QA-Route inaktiv' "$CASE_ROOT/park.log"
 printf 'T-6 phases: %s\n' "$(paste -sd, "$PHASES_FILE")"
-echo 'T-6 PASS: qa=active qa-park=pre-round autonomy0=8-distinct-phases digit-free-ids=2'
+printf 'T-6 evidence probe: %s\n' "$(grep -m1 -F 'Approval mode overridden' "$PROBE_LOG")"
+echo 'T-6 PASS: qa=active qa-park=pre-round qa-probe=logged,strict-FATAL autonomy0=8-distinct-phases digit-free-ids=2'

@@ -21,7 +21,9 @@ back violations. Only the human operator changes the specification, and
 disputes that a fresh arbiter session cannot resolve are parked and handed
 to the human in an escalation file. A self-test suite with stub models
 exercises the orchestration logic without calling any model; the
-documentation below is in German.
+documentation below is in German. Version 1.1.0 adds a preset for R
+packages, an installer for existing repositories and a verified example
+configuration for three model providers.
 
 ## Überblick für Außenstehende
 
@@ -63,9 +65,10 @@ fest.
 
 ---
 
-Stand **v1.0.1**: veröffentlichte Fassung mit derselben Ablauflogik wie der
-Abnahmestand `v1.0` (Abschnitt 11). Bauplan, zwei anfängliche adversarielle
-Prüfberichte, Rework und Nachprüfungen liegen unter `docs/template/`.
+Stand **v1.1.0**: Umbau der Fassung 1.0.1 für R-Pakete, das Einsetzen in
+bestehende Repos und eine geprüfte Konfiguration für drei Modellanbieter
+(Abschnitt 11). Bauplan, zwei anfängliche adversarielle Prüfberichte, Rework
+und Nachprüfungen des Abnahmestands `v1.0` liegen unter `docs/template/`.
 
 Dieses Template orchestriert drei getrennte Rollen: Ein **Builder** baut,
 ein **Reviewer** prüft und entscheidet, und eine optionale **QA-/Red-Team-
@@ -279,6 +282,7 @@ Exit-Codes von `orchestrator/orchestrate.sh`:
 | `docs/template/` | Bau-, Rework- und Abnahme-Archiv des Templates; **Zielprojekte dürfen diesen gesamten Ordner löschen** |
 | `reference/` | vorhandene Wurzel für Projektquellen |
 | `reference/anchors/README.md` | Schema für projektbezogene Ankerdateien unter `reference/anchors/*.json`; das unveränderte Template enthält noch keinen normativen JSON-Anker |
+| `tools/install-into.sh` | setzt die Harness-Teile in ein bestehendes Git-Repo ein (Abschnitt 5); Werkzeug des Templates, das selbst nicht mitkopiert wird |
 
 `bootstrap.sh` akzeptiert genau die Flags `--update`, `--non-interactive`,
 `--no-start` und `--edit`. `--update` verwendet vorhandene
@@ -293,6 +297,9 @@ Exit-Codes von `orchestrator/orchestrate.sh`:
 | `orchestrator/verifier.sh` | Gate-Runner für ausführbare `orchestrator/gates.d/NN-*.sh` |
 | `orchestrator/gates.d/README.md` | kurze Aktivierungsanleitung für Gate-Beispiele |
 | `orchestrator/gates.d/_lib.sh` | gemeinsame Funktionen für konfigurierte Kommando-Gates |
+| `orchestrator/lib/toolchain.sh` | prüft und installiert die in `toolchain.json` deklarierten Laufzeiten und Manifeste |
+| `orchestrator/lib/r-deps.R`, `r-tests.R`, `r-check.sh`, `r-mutation.R` | Gate-Kommandos des Presets `r-paket`: Abhängigkeiten, ein testthat-Lauf über alle Rollen-Testordner, `R CMD build`/`check --as-cran` außerhalb des Repos, muttest-Adapter für `86-mutgate` |
+| `orchestrator/policies/qa-gemini.toml` | Policy der Gemini CLI für die QA-Rolle: als einziges Shell-Kommando `Rscript` |
 | `orchestrator/status.sh` | schreibt `STATUS.md` und `orchestrator/state/summary.json` nach Statusvertrag v1 |
 | `orchestrator/notify.sh` | best-effort HTTP-POST für `FATAL`, `PARKED`, `ARBITER`, `NEEDS_HUMAN`, `DONE` und `STALE` |
 | `orchestrator/watchdog.sh` | meldet `STALE`, wenn eine Lock-PID lebt und der Summary-Heartbeat zu alt ist |
@@ -325,6 +332,7 @@ vorhanden ist.
 | `projektierung/presets/software-ts/PRESET.md` | TypeScript-Layout, Gate-Grundsätze und Zusatzterritorien |
 | `projektierung/presets/text/PRESET.md` | Manuskript-Layout, Text-Gates und Zusatzterritorien |
 | `projektierung/presets/daten/PRESET.md` | Datenpipeline-Layout, Daten-Gates und Zusatzterritorien |
+| `projektierung/presets/r-paket/PRESET.md` | R-Paket: Territorien, Toolchain, R-Gates, muttest, `.Rbuildignore`, pkgdown und `docs/`, Quellen, Einsetzen in ein bestehendes Paket; die markierten Konfigurationsblöcke fährt T-10 aus |
 | `projektierung/beispiel/README.md` | Einordnung des gekürzten Demiurg-Beispiels unter `projektierung/beispiel/demiurg/` |
 
 ### `tests/template/`
@@ -384,7 +392,12 @@ nicht als fertige Projektspezifikation im neutralen Template eingecheckt.
 deklarierte Toolchain und das externe MCP-venv, führt MCP-Selbsttest und
 Statusprüfung aus und startet standardmäßig MCP plus Cloudflare-Tunnel in
 einer tmux-Session. Danach druckt es die Connector-URL. Für einen Lauf ohne
-Server/Tunnel dient `bash bootstrap.sh --no-start`.
+Server/Tunnel dient `bash bootstrap.sh --no-start`. Beim ersten Lauf öffnet
+es `orchestrator/config.env` mit `${EDITOR:-vi}` und fragt auch mit
+`--no-start` nach dem Tunnelmodus. Ohne Rückfragen läuft
+`bash bootstrap.sh --no-start --non-interactive` (kein Editor, Tunnelmodus
+`quick`); `orchestrator/config.env` danach bearbeiten. Wer interaktiv startet,
+setzt etwa `EDITOR=nano`.
 
 **Schritt 5: Konfigurieren.** Fülle `orchestrator/config.env`. Die
 effektiven Rollenaufrufe stehen in `BUILDER_CMD`, `REVIEWER_CMD` und
@@ -396,7 +409,16 @@ eingecheckten Beispiele Modus 644 haben; die Kopie muss ausführbar werden:
 ```bash
 cp orchestrator/gates.d/30-tests.sh.example orchestrator/gates.d/30-tests.sh
 chmod +x orchestrator/gates.d/30-tests.sh
+git add --chmod=+x orchestrator/gates.d/30-tests.sh
 ```
+
+`git add --chmod=+x` ist nötig, wo Git `core.filemode=false` verwendet, etwa
+auf `/mnt/c` unter WSL: Ein gewöhnliches `git add` trägt neue Dateien dort als
+100644 ein, und ein frischer Klon hätte nicht ausführbare Gates, die
+`orchestrator/verifier.sh` nicht aktiviert. `git ls-files -s
+orchestrator/gates.d/[0-9][0-9]-*.sh` zeigt den Modus; jede Zeile beginnt mit
+100755. `core.filemode` bleibt auf `/mnt/c` `false`, sonst erscheint jede
+Datei als geändert.
 
 **Schritt 6: Vorwissen platzieren.** Siehe Abschnitt 5.
 
@@ -440,11 +462,38 @@ bleibt nötig.
 | KI-Besprechungen, Notizen, Ideenlisten | ungekürzt an das Intake anhängen | `projektierung/PROJEKTIERUNG.md` verlangt die Sortierung entschieden/offen/verworfen |
 | Konzepte und Spezifikationen | Original unter `reference/` behalten und dem Intake beilegen | freigegebener bindender Inhalt wird als nummerierte Spec unter `docs/` projektiert |
 | eigene Agentenregeln | nicht als zweite Verfassung parallel führen | Bauregeln nach `IMPLEMENTATION-RULES.md`, Projektfakten in den Projektblock von `AGENTS.md`, Quellenwissen nach `reference/` |
-| bestehender Code | unter einem in der Spec benannten Unterordner von `reference/` ablegen | Portierung kann als früher Meilenstein mit Differentialtests geplant werden; ein automatisches Überstülpen des Templates existiert nicht |
+| bestehender Code | als Vorlage unter einem in der Spec benannten Unterordner von `reference/` ablegen oder das Harness direkt in das bestehende Repo einsetzen (unten) | Portierung kann als früher Meilenstein mit Differentialtests geplant werden; `tools/install-into.sh` setzt das Harness in ein bestehendes Repo ein, ohne dessen Dateien zu überschreiben |
+| urheberrechtlich geschützte Literatur | nur der Textspiegel unter `reference/quellen/` (git-ignoriert), der Katalog versioniert als `reference/QUELLENKATALOG.md`; PDFs, EPUB und Rohdaten außerhalb des Repos | die Territoriumsprüfung erfasst auch ignorierte Dateien; jede Datei im Checkout verlängert jeden Modellaufruf (Messwerte im Preset `r-paket`, Abschnitt Quellen) |
 | Daten, CSVs, Medien | unter `reference/` oder einem in der Spec benannten Projektpfad | die mitgelieferten Asset-/Daten-Gates führen nur konfigurierte Befehle aus; Manifest- oder SHA256-Prüfungen müssen im jeweiligen Projektkommando tatsächlich implementiert sein |
 | Zahlen, Grenzwerte, Messlatten | Quellen in Intake-Feld 6 und der Projektierungs-Ausgabe `ANKER-TODO.md` | der Reviewer soll daraus projektbezogene `reference/anchors/*.json` nach `reference/anchors/README.md` erstellen |
 | Stil-, Figuren- oder Weltbibel | Pfade gemäß `projektierung/presets/text/PRESET.md` | Freigabe über `REVIEWER_EXTRA_PATHS_REGEX`; konkrete Prüfkommandos kommen aus der Projektkonfiguration |
 | bestehende Tests | als Quellenmaterial oder später im passenden Projektterritorium | Abnahmetests unter `tests/acceptance/**` schreibt der Reviewer neu aus freigegebenen Kriterien |
+
+### Harness in ein bestehendes Repo einsetzen
+
+Statt eines frischen Klons kann das Harness in ein vorhandenes Repo kommen:
+
+```bash
+bash tools/install-into.sh --dry-run <zielrepo>              # nur anzeigen
+bash tools/install-into.sh [--katalog <KATALOG.md>] <zielrepo>
+```
+
+Das Skript kopiert die Harness-Teile aus dem Index des Templates und
+überschreibt nie Projektdateien: `README.md`, `LICENSE`, `LICENSE.md`,
+`CITATION.cff` und `.zenodo.json` bleiben unangetastet, vorhandene Dateien
+mit anderem Inhalt (etwa ein eigenes `AGENTS.md`) bleiben und erscheinen als
+Konflikt im Bericht. `.gitignore` und `.gitattributes` werden zusammengeführt,
+nicht ersetzt; `.gitignore` erhält dabei `reference/quellen/`. Bei einem
+R-Paket ergänzt es `.Rbuildignore` um die Harness-Dateien. Template-Interna
+(`docs/template/`, `tests/template/`, `tools/`, der Verlauf in `PROGRESS.md`)
+kommen nicht mit; `PROGRESS.md` entsteht als leeres Gerüst. Jede Datei mit
+Modus 100755 im Template wird mit `git add --chmod=+x` eingetragen. Das Skript
+staged nur; den Commit macht der Betreiber. Es verlangt einen sauberen
+Arbeitsbaum und endet mit Exit 0 (eingesetzt), 3 (eingesetzt, offene Punkte im
+Bericht, etwa ein ignoriertes `docs/` oder pkgdown nach `docs/`) oder 2 (nichts
+geändert). Die Schritte danach beschreibt
+`projektierung/presets/r-paket/PRESET.md`, Abschnitt „Einsetzen in ein
+bestehendes Paket“; für andere Stacks gelten sie sinngemäß.
 
 ## 6. Konfiguration
 
@@ -465,15 +514,75 @@ Die vollständige Variablenliste und Defaults stehen in
   `QA_SAFE_MODE_PATTERN` geprüft.
 - `ROLE_GUARDS=off` ist der einzige bewusste Abschalter für leere
   Required-/Safe-Mode-Prüfungen und wird in Log und Summary sichtbar. Die
-  Verbotsliste für Rollenkommandos bleibt trotzdem aktiv: Unter anderem
-  `--continue`, `--resume`, `--session`,
-  `--dangerously-skip-permissions` und `--yolo` führen zu FATAL.
+  Verbotslisten für Rollenkommandos bleiben trotzdem aktiv; FATAL nennt das
+  gefundene Muster:
+  - Resume: `--continue`, `--resume`, `--session`, `--session-file` und die
+    Unterkommandos `resume` und `fork` (etwa `codex exec resume --last`),
+  - Bypass und Full Access: alles mit `dangerously-skip`, `dangerously-bypass`
+    oder `dangerously-disable` (darunter `--dangerously-skip-permissions`,
+    `--allow-dangerously-skip-permissions`,
+    `--dangerously-bypass-approvals-and-sandbox`), `bypassPermissions`,
+    `--yolo`, `full-access` (auch `danger-full-access`),
+  - Yolo- und Klassifikator-Freigaben: `--approval-mode yolo` und
+    `--approval-mode=yolo` (Gemini CLI, Qwen Code), `--approval-mode auto`
+    (Qwen Code: ein LLM-Klassifikator entscheidet), `--permission-mode auto`
+    (Claude Code) und `--approve-for-me` (Codex CLI).
+
+  Die sicheren Bearbeitungsmodi `--approval-mode auto_edit` (Gemini CLI) und
+  `--approval-mode auto-edit` (Qwen Code) bleiben erlaubt. Kurzflags wie `-y`,
+  `-c` oder `-r` bedeuten je CLI Verschiedenes (`-c` ist bei Codex `--config`)
+  und stehen deshalb nicht auf der Liste; Freigaben in CLI-Einstellungsdateien
+  sieht der Wächter ebenfalls nicht (Abschnitt 8).
+- Die strikte QA-Routenprobe schreibt die vollständige CLI-Ausgabe nach
+  `orchestrator/logs/qa-probe-<zeitstempel>-<versuch>.log`;
+  `orchestrator/logs/orchestrate.log` nennt den Pfad. So wird etwa eine stille
+  Rückstufung des Freigabemodus sichtbar (RUNBOOK, PREFLIGHT).
 - `BUILDER_MODEL`, `REVIEWER_MODEL`, `QA_MODEL` und `QA_ENDPOINT` in der
   Vorlage steuern den Modellaufruf **nicht**. `QA_MODEL` erscheint nur als
   Bezeichnung im erfolgreichen QA-Probe-Log; die übrigen drei werden vom
   Orchestrator nicht ausgewertet. Modell und Endpoint müssen daher in
   `BUILDER_CMD`, `REVIEWER_CMD` beziehungsweise `QA_CMD` wirksam
   konfiguriert werden.
+
+### Beispiel: drei Anbieter
+
+`config.env.example` enthält einen auskommentierten, am 23.10.2026 geprüften
+Block: Builder GPT-6 Astra über Codex CLI 0.164.0, Reviewer und Schiedsrichter
+Claude Opus 5.5 über Claude Code 2.1.309, QA Gemini 4 Argon über Gemini CLI
+0.65.0 (Weg A) mit Kimi K3 über Qwen Code 0.26.0 als Ersatz (Weg C). Alle
+Flags stehen im echten `--help` der genannten Versionen; ein PREFLIGHT mit
+diesem Block, den echten CLIs und der QA-Routenprobe ohne Terminal ist
+bestanden (Beleg in `PROGRESS.md`).
+
+- **Effort:** `claude --effort max` und `codex exec -c model_reasoning_effort=max`.
+  Codex nimmt einen `-c`-Wert, der kein gültiges TOML ist, als Rohstring.
+  `ultra` delegiert bei Codex automatisch an Unteragenten und wird nicht
+  verwendet. Der Schiedsrichter läuft über `REVIEWER_CMD` und erhält dieselbe
+  Stufe (Selbsttest T-3).
+- **Modellnamen:** `codex debug models` zeigt den Codex-Katalog,
+  `gpt-6-astra` steht dort auch ohne Anmeldung; einen Befehl `codex models`
+  gibt es in 0.164.0 nicht. Die Freischaltung für das Konto belegt nur ein
+  echter Aufruf. Die API-Kennung von Gemini 4 Argon ist `gemini-4-argon`
+  (stabile Kennung laut Gemini-API-Dokumentation); die Gemini CLI kennt das
+  Modell nicht aus ihrer eingebauten Liste und reicht die Kennung durch.
+- **Anmeldung:** Rollen laufen mit `env -i`; Schlüssel als Umgebungsvariable
+  kommen nicht an. Jede CLI muss unter `HOME` angemeldet sein: Codex über
+  `codex login`, Claude Code über die Browser-Anmeldung, die Gemini CLI über
+  `~/.gemini/.env`, Qwen Code über `~/.qwen/.env`.
+- **Netz:** Codex `--sandbox workspace-write` hat kein Netz (Sitzungsdaten:
+  `network_access: false`); Abhängigkeiten installiert das deps-Gate vorab,
+  außerhalb der Sandbox.
+- **WSL2/Linux:** Codex braucht `bubblewrap` (`bwrap`), die Gemini CLI
+  `ripgrep`.
+- **Shell für QA und Reviewer:** nur `Rscript`, über die Gemini-Policy
+  `orchestrator/policies/qa-gemini.toml`, bei Qwen Code über
+  `--allowed-tools`, beim Reviewer über `--allowedTools "Bash(Rscript:*)"`.
+  Das ist keine Sicherheitsgrenze (Abschnitt 8).
+- **Gemini CLI und Ordner-Vertrauen:** `~/.gemini/.env` wird nur in
+  vertrauten Ordnern gelesen, und in nicht vertrauten Ordnern stuft die CLI
+  `--approval-mode auto_edit` still auf `default` zurück. Abhilfe:
+  `security.folderTrust.enabled=false` in `~/.gemini/settings.json` oder das
+  Zielrepo in `~/.gemini/trustedFolders.json`.
 
 ### Autonomie
 
@@ -571,8 +680,18 @@ Besondere Logik besitzen:
 - `orchestrator/gates.d/82-territory.sh.example`: prüft, dass der letzte
   Territoriums-Audit zur aktuellen Runde und Basis passt.
 - `orchestrator/gates.d/86-mutgate.sh.example`: berechnet einen
-  Mutation-Score aus einem Stryker-Report, nutzt Floor/Ratchet/Baseline und
-  meldet einen fehlenden Report nach Werkzeugabbruch als `error`.
+  Mutation-Score aus einem Report im Stryker-Schema, nutzt
+  Floor/Ratchet/Baseline und meldet einen fehlenden Report nach
+  Werkzeugabbruch als `error`. Für R liefert `orchestrator/lib/r-mutation.R`
+  den Bericht des CRAN-Pakets muttest unverändert in diesem Schema.
+
+Für R-Pakete liefert das Template die Kommandos selbst:
+`orchestrator/lib/r-deps.R` (`DEPS_CMD`), `orchestrator/lib/r-tests.R`
+(`TEST_CMD`), `orchestrator/lib/r-check.sh` (`LINT_CMD`, `R CMD check
+--as-cran --no-manual` außerhalb des Repos, ERROR oder WARNING ist `fail`) und
+`orchestrator/lib/r-mutation.R` (`MUT_CMD`). Sie liegen im
+Betreiber-Territorium; Konfiguration und Grenzen stehen im Preset
+`r-paket`.
 - `orchestrator/gates.d/87-golden-adr.sh.example`: verlangt bei Änderungen
   unter dem konfigurierten Golden-Regex oder `reference/anchors/` mindestens
   eine geänderte Datei mit Präfix `docs/decisions/ADR-` im Diff seit
@@ -619,7 +738,21 @@ belegen.
 - **Territorium:** Die Prüfung umfasst ignorierte Pfade und schützt frühere
   Logs per Hash-Manifest. Pfade aus
   `orchestrator/artifact-paths.allowlist` bleiben eine ausdrückliche
-  Ausnahme.
+  Ausnahme. Weil auch ignorierte Dateien vor und nach jedem Modellaufruf
+  gehasht und kopiert werden, verlängert jede Datei im Checkout jeden Aufruf;
+  große Quellen und Rohdaten gehören nicht in den Checkout (Preset `r-paket`,
+  Abschnitt Quellen).
+- **Shell-Freigabe nur für `Rscript`:** Die Beispielkonfiguration erlaubt QA
+  und Reviewer als einziges Shell-Kommando `Rscript`. Das ist keine
+  Sicherheitsgrenze: Über `system()` startet R jedes Kommando. Schutz bleiben
+  die Territoriumsprüfung und der Rollback des Orchestrators.
+- **Was der Wächter nicht sieht:** Er prüft die Rollenkommandos, nicht die
+  Einstellungsdateien der CLIs unter `HOME`. Eine Freigabe dort wirkt wie
+  ein Bypass, ohne im Kommando zu erscheinen: etwa `toolPermission:
+  always-proceed` der Antigravity CLI, `tools.allowed` in
+  `~/.gemini/settings.json`, `permissions.allow` in `~/.qwen/settings.json`
+  oder in `~/.claude/settings.json`. Diese Dateien zu prüfen ist
+  Betreiberpflicht (RUNBOOK).
 - **Provenienz:** `orchestrator/state/<MS>/gates.json` enthält Basis- und
   aktuellen SHA sowie Werkzeugversionen.
   `orchestrator/logs/orchestrate.log` protokolliert ausgewählte effektive
@@ -663,9 +796,11 @@ unter `/tmp` und fährt die echte Orchestrator-/Gate-/Statuslogik mit
 | T-4 | Notify, Watchdog, Doppelstart, fremdbefüllter Lock und Statuspräzedenz |
 | MCP-Allowlist | aktuell 72 positive, negative, Struktur-, grep- und Symlink-Fälle |
 | T-5B / T-5 | sechs ausgeführte Verhaltensnachweise und Vollinventar gegen `docs/template/T5-SOLL.md` |
-| T-6 | aktive QA, QA-Park, acht Fortschritte mit Autonomiestufe 0 und ziffernlose IDs |
-| T-7 | Territorien, Logschutz, Rollen-Umgebung, Flag-/Guard-Prüfung, Vertrags- und Manifestfehler |
+| T-6 | aktive QA, QA-Park, protokollierte strikte QA-Routenprobe (FATAL bei stiller Modus-Rückstufung), acht Fortschritte mit Autonomiestufe 0 und ziffernlose IDs |
+| T-7 | Territorien, Logschutz, Rollen-Umgebung, Flag-/Guard-Prüfung mit allen Mustern der Verbotslisten (Negativfälle) und `auto_edit`/`auto-edit` samt Routenprobe (Positivfälle), Vertrags- und Manifestfehler |
 | T-8 | Gate-error/fail, Mutation-Ratchet, Trace, Golden-ADR und Territory-Marker |
+| T-9 | `tools/install-into.sh`: Projektdateien unberührt, Zusammenführen von `.gitignore`, `.gitattributes` und `.Rbuildignore`, `reference/quellen/` ignoriert, Katalog, docs/pkgdown-Konfliktbericht, Probelauf, Wiederholung, Modi 100755 bei `core.filemode=false` und im frischen Klon |
+| T-10 | Preset `r-paket`: Einsetzen per Installer, die markierten Preset-Blöcke unverändert, M0 mit Attrappen bis DONE, deps/lint/tests/trace/territory/mutgate/golden-adr grün, `R/` unverändert, danach echter muttest-Lauf gegen `86-mutgate`; ohne R „übersprungen: R fehlt“, nie PASS |
 
 Der Suite-Lauf hängt Auditzeilen an den ignorierten Laufzeitpfad
 `orchestrator/mcp/calls.log` an. Das ist erwarteter Testzustand, kein
@@ -674,7 +809,12 @@ versioniertes Artefakt.
 Voraussetzungen sind bash, git, jq, tmux, curl, `timeout` und python3 mit
 venv. T-1 legt dabei eine temporäre Umgebung an und installiert
 `mcp==1.28.1` aus PyPI; mit `HARNESS_MCP_PYTHON` lässt sich stattdessen ein
-vorhandenes Python mit diesem Paket verwenden. Unter Windows laufen die
+vorhandenes Python mit diesem Paket verwenden. T-10 braucht R mit `testthat`
+und `pkgload`, für den Mutationsteil `muttest`; fehlt R, endet T-10 mit
+Exit 77, und die Schlusszeile nennt T-10 als übersprungen. Die temporären
+Repos übernehmen die Dateimodi aus dem Git-Index, nicht aus dem Arbeitsbaum,
+damit sie einem frischen Klon entsprechen; auf `/mnt/c` sind sonst fast alle
+Dateien lokal ausführbar. Unter Windows laufen die
 Selbsttests in WSL, etwa
 `wsl bash -lc "cd /mnt/c/<Pfad>/harness-template && tests/template/run-all.sh"`;
 `.gitattributes` sorgt dafür, dass auch ein Windows-Klon LF-Zeilenenden hat.
@@ -721,6 +861,18 @@ Abnahmeberichten sind lokale Pfade und Benutzernamen für die Veröffentlichung
 neutralisiert (etwa `~/dev/…` statt des Home-Verzeichnisses); sonst sind sie
 unverändert.
 
+`v1.1.0` (23. Oktober 2026) ist der Umbau für R-Pakete und drei
+Modellanbieter. Er ändert am Orchestrator zwei Stellen: die Verbotslisten der
+Rollenkommandos (zusätzlich `--approval-mode yolo`, `dangerously-bypass`,
+Klassifikator-Freigaben und Resume-Unterkommandos) und das Protokoll der
+QA-Routenprobe. Neu sind das Preset `r-paket` mit den R-Gate-Kommandos unter
+`orchestrator/lib/`, der muttest-Adapter, die Gemini-Policy für QA,
+`tools/install-into.sh`, der Beispielblock in `config.env.example`, die
+Selbsttests T-9 und T-10 sowie Ergänzungen in T-3, T-6 und T-7. Die
+temporären Test-Repos übernehmen die Dateimodi jetzt aus dem Git-Index.
+Keine bestehende Prüfung und keine Schwelle wurde abgeschwächt; Ausführung und
+Messwerte stehen in `PROGRESS.md`.
+
 ## 12. FAQ
 
 **Andere Modelle einsetzen?** Ändere das jeweilige Rollenkommando in
@@ -731,10 +883,12 @@ unverändert.
 zugleich `QA_REQUIRED_FROM` auf eine Manifest-ID gesetzt, parkt das Harness
 ab dieser Position, solange `QA_ENABLED` nicht 1 ist.
 
-**Kann ich das Template über ein bestehendes Repo legen?** Es gibt dafür
-keinen automatisierten Pfad. Der dokumentierte Weg ist ein frischer Klon,
-Originalmaterial unter `reference/` und eine projektspezifisch geplante
-Portierung.
+**Kann ich das Template über ein bestehendes Repo legen?** Ja, mit
+`tools/install-into.sh <zielrepo>` (Abschnitt 5). Es überschreibt keine
+Projektdateien, führt `.gitignore`, `.gitattributes` und bei R-Paketen
+`.Rbuildignore` zusammen und meldet Konflikte, statt sie aufzulösen. Der
+andere Weg bleibt ein frischer Klon mit Originalmaterial unter `reference/`
+und einer projektspezifisch geplanten Portierung.
 
 **Muss ich `docs/template/` behalten?** Nein. Es ist nur das interne Bau- und
 Abnahme-Archiv des Templates und kann im Zielprojekt entfernt werden.
@@ -844,7 +998,9 @@ Agenten sind als solche gekennzeichnet: 19 der 20 Commits bis `7a27de2`
 tragen den Autor `Codex <codex@local>`; der übrige (`3d95ed7`) legt den
 Bericht der unabhängigen Wiederabnahme ab. Die Veröffentlichungsfassung
 1.0.1 hat Claude Code vorbereitet; die Commits dazu nennen das im Vermerk
-`Co-Authored-By`.
+`Co-Authored-By`. Den Umbau zu 1.1.0 hat Claude Code mit Claude Opus 5.5 nach
+dem Umbau-Auftrag des Betreibers ausgeführt; auch dieser Commit trägt den
+Vermerk.
 
 Eigenanteil von Daniel Andreas Moj: Architektur, Rollen-, Rechte- und
 Eskalationsregeln, Prüfstrategie sowie Prüfung und Freigabe der Ergebnisse.
@@ -855,7 +1011,9 @@ Bauplan, Rework-Auftrag und Betreiberentscheide E1–E9 unter
 
 Bitte über die Angaben in [`CITATION.cff`](CITATION.cff) zitieren; GitHub
 zeigt sie unter „Cite this repository“ an. Die Fassung 1.0.1 ist bei Zenodo
-archiviert:
+archiviert; eine eigene DOI für 1.1.0 vergibt Zenodo erst mit deren
+Archivierung, bis dahin führt die Konzept-DOI zur neuesten archivierten
+Fassung:
 
 - Version 1.0.1: [10.5281/zenodo.23352918](https://doi.org/10.5281/zenodo.23352918)
 - alle Versionen (Konzept-DOI, führt stets zur neuesten Version):
@@ -863,7 +1021,7 @@ archiviert:
 
 Moj, Daniel Andreas (2026): harness-template: Vorlage für eine
 Multi-Agenten-Entwicklungsumgebung mit ausführbaren Abnahmeprüfungen.
-Software, Version 1.0.1. Zenodo. https://doi.org/10.5281/zenodo.23352918.
+Software, Version 1.1.0. Zenodo. https://doi.org/10.5281/zenodo.23352917.
 
 ## 17. Lizenz
 

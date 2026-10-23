@@ -1,0 +1,18 @@
+# Policy-Engine der Gemini CLI für die QA-Rolle (Weg A in config.env.example).
+# Betreiber-Territorium: Keine Modellrolle darf diese Datei ändern.
+#
+# Aufruf: gemini ... --approval-mode auto_edit --policy orchestrator/policies/qa-gemini.toml
+# --policy lädt die Datei in der Nutzer-Stufe (4 + priority/1000) und ersetzt dabei
+# ~/.gemini/policies. Ohne diese Regel verweigert die CLI im Headless-Lauf jedes
+# Shell-Kommando (Standardregel run_shell_command, interactive = false, Stufe 1.010).
+# Verkettete Kommandos zerlegt die CLI und prüft jeden Teil einzeln; "Rscript … && rm …"
+# wird also verweigert. Geprüft mit Gemini CLI 0.65.0 am 23.10.2026.
+#
+# Keine Sicherheitsgrenze: R startet über system() jedes Kommando. Schutz bleiben die
+# Territoriumsprüfung und der Rollback des Orchestrators.
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "Rscript"
+decision = "allow"
+priority = 100
+modes = ["autoEdit"]

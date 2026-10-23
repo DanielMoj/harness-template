@@ -42,6 +42,19 @@ materialize_tree() {
     mkdir -p "$destination/docs"
     cp -a "$REPO_ROOT/docs/template" "$destination/docs/template"
   fi
+
+  # Modi wie in einem frischen Klon: aus dem Index, nicht aus dem Arbeitsbaum. Auf /mnt/c
+  # sind sonst fast alle Dateien lokal ausführbar, und fehlende 100755-Einträge fielen nie auf.
+  local record mode path
+  while IFS= read -r -d '' record; do
+    mode="${record%% *}"
+    path="${record#*$'\t'}"
+    [ -f "$destination/$path" ] || continue
+    case "$mode" in
+      100755) chmod 755 "$destination/$path" ;;
+      100644) chmod 644 "$destination/$path" ;;
+    esac
+  done < <(git -C "$REPO_ROOT" ls-files -s -z)
 }
 
 init_fixture_repo() {

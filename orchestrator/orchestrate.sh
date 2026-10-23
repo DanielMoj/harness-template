@@ -257,12 +257,15 @@ preflight() {
     qa_expanded="$EXPANDED_ROLE_CMD"
   fi
   all_cmds="$builder_expanded $reviewer_expanded $qa_expanded"
-  if grep -Eqi -- '--continue|--resume|--session([ =]|$)' <<<"$all_cmds"; then
-    fatal "Resume-/Session-Flags sind verboten; jede Phase ist eine frische Session."
-  fi
-  if grep -Eqi -- '--dangerously-skip-permissions|bypassPermissions|--yolo|full[-_ ]?access|dangerously[-_ ]?disable' <<<"$all_cmds"; then
-    fatal "gefährlicher Bypass-/Full-Access-Modus in Rollenkommando gefunden."
-  fi
+  # Resume: Flags und Unterkommandos wie "codex exec resume|fork".
+  local banned
+  banned="$(grep -Eoi -- '--continue|--resume|--session([ =]|$)|--session-file|(^|[[:space:]])(resume|fork)([[:space:]]|$)' <<<"$all_cmds" | head -n 1 || true)"
+  [ -z "$banned" ] \
+    || fatal "Resume-/Session-Flags sind verboten; jede Phase ist eine frische Session: ${banned# }"
+  # Bypass, Full Access, Yolo und Klassifikator-Freigaben (auto); auto_edit und auto-edit bleiben erlaubt.
+  banned="$(grep -Eoi -- 'dangerously[-_ ]?(skip|bypass|disable)[[:alnum:]_-]*|bypassPermissions|--yolo|full[-_ ]?access|--approve-for-me|--approval-mode[[:space:]=]+[^[:alnum:]]?(yolo|auto([^[:alnum:]_-]|$))|--permission-mode[[:space:]=]+[^[:alnum:]]?auto([^[:alnum:]_-]|$)' <<<"$all_cmds" | head -n 1 || true)"
+  [ -z "$banned" ] \
+    || fatal "gefährlicher Bypass-/Full-Access-/Auto-Freigabe-Modus in Rollenkommando gefunden: $banned"
 
   validate_role_cli BUILDER "${BUILDER_CMD:-}" "${BUILDER_HELP_CMD:-}" \
     "${BUILDER_REQUIRED_FLAGS:-}" "${BUILDER_SAFE_MODE_PATTERN:-}"
@@ -287,9 +290,10 @@ preflight() {
   log "CONFIG: AUTONOMY=$AUTONOMY_LEVEL PLAN<=$MAX_ROUNDS_PLAN REWORK<=$MAX_ROUNDS_REWORK REBUILD@r$REBUILD_ROUND ARBITER+$ARBITER_EXTRA_ROUNDS TIMEOUT=$PHASE_TIMEOUT RETRY=${RETRY_MAX}x/${RETRY_SLEEP}s GATE_ERROR_RETRIES=$GATE_ERROR_RETRIES MAX_MS=$MAX_MS_PER_RUN QA=$QA_ENABLED(ab ${QA_REQUIRED_FROM:-nie}) ROLE_GUARDS=$([ "$ROLE_GUARDS" = off ] && echo OFF || echo on) NOTIFY=$([ "$NOTIFY_ENABLED" = 1 ] && [ -n "${NOTIFY_URL:-}" ] && echo an || echo aus) BUILDER=${BUILDER_CMD%% *} REVIEWER=${REVIEWER_CMD%% *}"
 
   if [ "$QA_ENABLED" = 1 ] && [ "$QA_PROBE_STRICT" = 1 ]; then
-    local attempt=1 probe_file probe_out rc
+    local attempt=1 probe_file probe_log probe_out rc
     while [ "$attempt" -le "$QA_PROBE_RETRIES" ]; do
       probe_file="$ORCH/logs/qa-probe-$(TS)-$attempt.md"
+      probe_log="${probe_file%.md}.log"
       printf '%s\n' "Antworte nur: OK" > "$probe_file"
       build_model_env QA "$probe_file"
       if command -v timeout >/dev/null 2>&1; then
@@ -297,11 +301,13 @@ preflight() {
       else
         if probe_out="$(env -i "${MODEL_ENV[@]}" bash -c "$QA_CMD" 2>&1)"; then rc=0; else rc=$?; fi
       fi
+      # Die CLI-Ausgabe belegt die Ursache, etwa eine stille Rückstufung des Freigabemodus.
+      printf '%s\n' "$probe_out" > "$probe_log"
       if [ "$rc" = 0 ] && grep -q 'OK' <<<"$probe_out"; then
-        log "QA-Routenprobe bestanden ($QA_MODEL)"
+        log "QA-Routenprobe bestanden (${QA_MODEL:-}); Ausgabe: ${probe_log#"$REPO_ROOT/"}"
         break
       fi
-      log "WARN: QA-Routenprobe $attempt/$QA_PROBE_RETRIES fehlgeschlagen (rc=$rc)"
+      log "WARN: QA-Routenprobe $attempt/$QA_PROBE_RETRIES fehlgeschlagen (rc=$rc); Ausgabe: ${probe_log#"$REPO_ROOT/"}"
       [ "$attempt" -ge "$QA_PROBE_RETRIES" ] && fatal "QA-Routenprobe strict fehlgeschlagen."
       sleep "$QA_PROBE_SLEEP"
       attempt=$((attempt+1))

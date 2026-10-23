@@ -1,7 +1,7 @@
 {
   "contract": 1,
   "project": "harness-template",
-  "ts": "2026-08-05T22:56:49+02:00",
+  "ts": "2026-10-23T20:50:59+02:00",
   "milestone": {
     "id": "M0",
     "index": 1,
@@ -14,5 +14,6 @@
   "gates": {},
   "parked": [],
   "last_events": [],
-  "exit": null
+  "exit": null,
+  "role_guards": "on"
 }

@@ -81,8 +81,9 @@ Abnahmekriterien werden erfüllt, niemals passend gemacht:
    Literal.
 8. Gewaltenteilung ist hart: Abnahmetests gehören dem Reviewer, Produktcode
    dem Builder, E2E/Fuzz der QA und der Orchestrator dem Betreiber. Verboten
-   sind `--dangerously-skip-permissions`, `bypassPermissions`, Yolo- und
-   Full-Access-Modi in jeder Rolle.
+   sind `--dangerously-skip-permissions`, `--dangerously-bypass-*`,
+   `bypassPermissions`, Yolo-, Full-Access- und Klassifikator-Freigabemodi
+   (etwa `--approval-mode auto`) in jeder Rolle.
 
 ## Handoff-Disziplin
 

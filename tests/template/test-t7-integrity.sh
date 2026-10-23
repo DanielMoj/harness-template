@@ -64,6 +64,74 @@ run_orchestrator "$FLAG_REPO" "$CASE_ROOT/flag.log" env
 [ "$LAST_RC" = 2 ]
 grep -F 'nicht erlaubte $-Referenz' "$CASE_ROOT/flag.log" >/dev/null
 
+# Same pattern with the flag written literally, so the ban list itself is reached.
+# Arguments: case name, role variable, role, extra flags, expected FATAL text.
+banned_flag_case() {
+  local name="$1" role_var="$2" role="$3" flags="$4" expected="$5" repo
+  repo="$CASE_ROOT/ban-$name/repo"
+  mkdir -p "$(dirname "$repo")"
+  prepare_orchestrator_case T2 "$repo"
+  sed -i "s#^${role_var}=.*#${role_var}='bash tests/template/fake-model.sh $role --fixture-safe $flags'#" \
+    "$repo/orchestrator/config.env"
+  if [ "$role_var" = QA_CMD ]; then
+    sed -i 's/^QA_ENABLED=0$/QA_ENABLED=1/' "$repo/orchestrator/config.env"
+    grep -q '^QA_CMD=' "$repo/orchestrator/config.env" \
+      || printf "\nQA_CMD='bash tests/template/fake-model.sh qa --fixture-safe %s'\n" "$flags" \
+        >> "$repo/orchestrator/config.env"
+  fi
+  run_orchestrator "$repo" "$CASE_ROOT/ban-$name.log" env
+  [ "$LAST_RC" = 2 ] || { echo "T-7 FAIL: $name rc=$LAST_RC" >&2; return 1; }
+  grep -F -- "$expected" "$CASE_ROOT/ban-$name.log" >/dev/null \
+    || { echo "T-7 FAIL: $name ohne Meldung '$expected'" >&2; return 1; }
+  test ! -e "$repo/orchestrator/state/M0/1-acceptance.done"
+}
+BYPASS_TEXT='gefährlicher Bypass-/Full-Access-/Auto-Freigabe-Modus in Rollenkommando gefunden'
+RESUME_TEXT='Resume-/Session-Flags sind verboten'
+banned_flag_case gemini-yolo-eq QA_CMD qa '--approval-mode=yolo' "$BYPASS_TEXT: --approval-mode=yolo"
+banned_flag_case gemini-yolo-space BUILDER_CMD builder '--approval-mode yolo' "$BYPASS_TEXT: --approval-mode yolo"
+banned_flag_case codex-bypass BUILDER_CMD builder '--dangerously-bypass-approvals-and-sandbox' \
+  "$BYPASS_TEXT: dangerously-bypass-approvals-and-sandbox"
+banned_flag_case codex-bypass-generic BUILDER_CMD builder '--dangerously-bypass-hook-trust' \
+  "$BYPASS_TEXT: dangerously-bypass-hook-trust"
+banned_flag_case qwen-auto QA_CMD qa '--approval-mode auto' "$BYPASS_TEXT: --approval-mode auto"
+banned_flag_case claude-allow-skip REVIEWER_CMD reviewer '--allow-dangerously-skip-permissions' \
+  "$BYPASS_TEXT: dangerously-skip-permissions"
+banned_flag_case claude-auto REVIEWER_CMD reviewer '--permission-mode auto' "$BYPASS_TEXT: --permission-mode auto"
+banned_flag_case codex-approve-for-me BUILDER_CMD builder '--approve-for-me' "$BYPASS_TEXT: --approve-for-me"
+banned_flag_case codex-resume BUILDER_CMD builder 'resume --last' "$RESUME_TEXT; jede Phase ist eine frische Session: resume"
+banned_flag_case gemini-session-file QA_CMD qa '--session-file s.json' \
+  "$RESUME_TEXT; jede Phase ist eine frische Session: --session-file"
+
+# Positive cases: safe edit modes of Gemini CLI (auto_edit) and Qwen Code (auto-edit)
+# pass the ban list, the safe-mode pattern and the strict QA route probe.
+allowed_qa_mode_case() {
+  local name="$1" mode="$2" repo
+  repo="$CASE_ROOT/allow-$name/repo"
+  mkdir -p "$(dirname "$repo")"
+  prepare_orchestrator_case T2 "$repo"
+  sed -i 's/^AUTONOMY_LEVEL=3$/AUTONOMY_LEVEL=0/' "$repo/orchestrator/config.env"
+  sed -i 's/^QA_ENABLED=0$/QA_ENABLED=1/' "$repo/orchestrator/config.env"
+  cat >> "$repo/orchestrator/config.env" <<EOF
+QA_MODEL=fake-qa
+QA_CMD='bash tests/template/fake-model.sh qa --fixture-safe --approval-mode $mode'
+QA_HELP_CMD='bash tests/template/fake-model.sh --help'
+QA_REQUIRED_FLAGS='--fixture-safe'
+QA_SAFE_MODE_PATTERN='--approval-mode[ =]auto[-_]edit'
+QA_ENV_ALLOWLIST='ACCEPTANCE_SCENARIO'
+QA_PROBE_STRICT=1
+QA_PROBE_RETRIES=1
+QA_PROBE_SLEEP=0
+EOF
+  run_orchestrator "$repo" "$CASE_ROOT/allow-$name.log" env
+  [ "$LAST_RC" = 0 ] || { echo "T-7 FAIL: $name rc=$LAST_RC" >&2; return 1; }
+  grep -F 'QA-Routenprobe bestanden (fake-qa); Ausgabe: orchestrator/logs/qa-probe-' \
+    "$CASE_ROOT/allow-$name.log" >/dev/null
+  grep -Fx OK "$(find "$repo/orchestrator/logs" -maxdepth 1 -name 'qa-probe-*-1.log' -print -quit)" >/dev/null
+  test -f "$repo/orchestrator/state/M0/1-acceptance.done"
+}
+allowed_qa_mode_case gemini-auto-edit auto_edit
+allowed_qa_mode_case qwen-auto-edit auto-edit
+
 EMPTY_GUARD_REPO="$CASE_ROOT/empty-guard/repo"
 mkdir -p "$(dirname "$EMPTY_GUARD_REPO")"
 prepare_orchestrator_case T2 "$EMPTY_GUARD_REPO"
@@ -191,10 +259,18 @@ record_behavior sandbox-guard
 echo 'T-7 evidence rollback: lock-stray=absent report-evil=absent model-secrets=absent attempt-logs=2'
 echo 'T-7 evidence preset-hook: reviewer stilbibel.md accepted'
 for evidence_file in \
-  hidden.log tamper.log flag.log empty-guard.log guards-off.log \
+  hidden.log tamper.log flag.log \
+  ban-gemini-yolo-eq.log ban-gemini-yolo-space.log ban-codex-bypass.log ban-codex-bypass-generic.log \
+  ban-qwen-auto.log ban-claude-allow-skip.log ban-claude-auto.log ban-codex-approve-for-me.log \
+  ban-codex-resume.log ban-gemini-session-file.log \
+  empty-guard.log guards-off.log \
   missing-prompt.log criteria.log cycle.log qa-bound.log deps.log \
   identity.log bootstrap-identity.log; do
   printf 'T-7 evidence %s: ' "$evidence_file"
   grep -m1 -E 'verletzt Territorium|FATAL:|ROLE_GUARDS=OFF' "$CASE_ROOT/$evidence_file"
 done
-echo 'T-7 PASS: hidden-territory=rollback logs=hash-protected env=allowlisted flags=expanded guards=explicit preflight=contracts manifest=cycle qa-bound=validated deps=FATAL identity=FATAL preset-hooks=accepted'
+for evidence_file in allow-gemini-auto-edit.log allow-qwen-auto-edit.log; do
+  printf 'T-7 evidence %s: ' "$evidence_file"
+  grep -m1 -F 'QA-Routenprobe bestanden' "$CASE_ROOT/$evidence_file"
+done
+echo 'T-7 PASS: hidden-territory=rollback logs=hash-protected env=allowlisted flags=expanded ban-list=yolo,bypass,auto,resume safe-edit-modes=auto_edit,auto-edit guards=explicit preflight=contracts manifest=cycle qa-bound=validated deps=FATAL identity=FATAL preset-hooks=accepted'

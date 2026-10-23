@@ -34,6 +34,9 @@ orchestrator/logs/*-prompt.md
 orchestrator/mcp/*.log
 orchestrator/mcp/connector.url
 
+# Urheberrechtlich geschützte Quellen und ihr Textspiegel bleiben lokal.
+reference/quellen/
+
 # Lokale Extraktionsquelle, nie Teil des fertigen Templates.
 reference/patch-v2/
 

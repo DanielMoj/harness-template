@@ -21,7 +21,16 @@ Aktivierung, Beispiel:
 ```bash
 cp orchestrator/gates.d/10-deps.sh.example orchestrator/gates.d/10-deps.sh
 chmod +x orchestrator/gates.d/10-deps.sh
+git add --chmod=+x orchestrator/gates.d/10-deps.sh
 ```
+
+Mit `core.filemode=false` (etwa auf `/mnt/c` unter WSL) trägt ein
+gewöhnliches `git add` die Kopie als 100644 ein; in einem frischen Klon wäre
+das Gate dann nicht aktiv.
+
+Für R-Pakete stehen die Kommandos der Wrapper unter `orchestrator/lib/`
+(`r-deps.R`, `r-tests.R`, `r-check.sh`, `r-mutation.R`); Konfiguration im
+Preset `projektierung/presets/r-paket/PRESET.md`.
 
 Die Beispiele referenzieren ausschließlich `config.env`-Variablen und
 Repo-Dateien. Sie enthalten keinen Pfad und kein Kommando aus dem
